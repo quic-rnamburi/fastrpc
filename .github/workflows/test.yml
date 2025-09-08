@@ -1,5 +1,12 @@
-name: _test
-description: Run tests on LAVA
+name: test
+description: |
+  Run tests on LAVA for a specified machine using a Docker image.
+  This reusable GitHub Actions workflow executes FastRPC tests on LAVA infrastructure.
+  It leverages a Docker image for test execution and supports multi-target builds via a matrix strategy.
+  The workflow automates job creation, submission, and result validation on LAVA,
+  providing a streamlined testing process.
+  Designed to be triggered by other workflows, it offers a summary of test outcomes
+  with direct links to LAVA job results, enhancing traceability and debugging.
 
 on:
   workflow_call:
@@ -20,12 +27,11 @@ on:
         type: string
         required: true
 
-
 jobs:
   test:
     runs-on:
       group: GHA-FastRPC-Stg-SelfHosted-RG
-      labels: [ self-hosted, fastrpc-stg-u2404-x64-large-od-ephem ] 
+      labels: [ self-hosted, fastrpc-stg-u2404-x64-large-od-ephem ]
     strategy:
       fail-fast: false
       matrix:
@@ -37,8 +43,8 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Build fatrpc docker image
-        uses: ./.github/actions/build_docker_image
+      - name: Build fastrpc docker image
+        uses: qualcomm-linux-stg/fastrpc/.github/actions/build_docker_image@development
         with:
           image: ${{ inputs.docker_image }}
 
@@ -71,7 +77,7 @@ jobs:
             core.setOutput("LAVANAME", lavaname);
 
       - name: Create fastrpc - lava job definition
-        uses: ./.github/actions/lava_job_render
+        uses: qualcomm-linux-stg/fastrpc/.github/actions/lava_job_render@development
         id: create_job_definition
         with:
           docker_image: ${{ inputs.docker_image }}

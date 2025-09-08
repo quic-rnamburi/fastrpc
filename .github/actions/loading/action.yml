@@ -1,6 +1,12 @@
----
 name: Load Parameters
-description: Load parameters for the build job
+description: |
+  This composite action loads build parameters from a `MACHINES.json` file.
+  It parses the JSON file to create two matrices:
+  - `build_matrix`: A slimmed-down matrix containing only 'machine' and 'firmware' for better visibility in job names.
+  - `full_matrix`: A complete matrix including 'machine', 'firmware', and 'lavaname' for passing all necessary details to test jobs.
+  It expects the `MACHINES.json` file to be located at `ci/MACHINES.json` relative to the workspace root.
+  Each entry in `MACHINES.json` should be a key-value pair where the key is the machine name
+  and the value is an array `[firmware, lavaname]`.
 
 outputs:
   build_matrix:

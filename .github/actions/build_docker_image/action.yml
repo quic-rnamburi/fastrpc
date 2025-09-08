@@ -1,18 +1,13 @@
-# This GitHub Action builds the fastrpc Docker image using a multi-step process:
-# - Checks out the fastrpc-image repository to obtain the Dockerfile.
-# - Sets up Docker Buildx for advanced build capabilities.
-# - Captures the current user's UID, GID, and username for use as Docker build arguments.
-# - Builds the Docker image with caching enabled, tagging it as 'fastrpc-image:latest'.
-# - Outputs a success message and the image name after the build.
-# - Re-checks out the main repository for any subsequent workflow steps.
-#
-# Inputs:
-#   image: The name and tag of the Docker image to build (default: fastrpc-image:latest).
-#
-# This action is intended for use in CI/CD pipelines where building and caching Docker images is required.
-
-name: Build fatrpc docker image
-description: Build fatrpc docker image
+name: Build fastrpc docker image
+description: |
+  Build fastrpc docker image
+  This GitHub Action builds the fastrpc Docker image using a multi-step process:
+  Checks out the fastrpc-image repository to obtain the Dockerfile.
+  Sets up Docker Buildx for advanced build capabilities.
+  Captures the current user's UID, GID, and username for use as Docker build arguments.
+  Builds the Docker image with caching enabled, tagging it as 'fastrpc-image:latest'.
+  Outputs a success message and the image name after the build.
+  Re-checks out the main repository for any subsequent workflow steps.
 
 inputs:
   image:

@@ -1,29 +1,11 @@
-# This GitHub Action composite workflow performs the following steps:
-# 1. Processes a `presigned_urls.json` file to extract artifact URLs (modules, kernel image, vmlinux, ramdisk, and device tree blob)
-#    and sets them as outputs for use in subsequent steps.
-# 2. Updates a `metadata.json` file with the DTB URL using a Docker container and `jq`.
-# 3. Uploads the updated `metadata.json` to an AWS S3 bucket using a custom action.
-# 4. Updates a `cloudData.json` file with URLs for metadata, kernel image, vmlinux, ramdisk, and modules, each via Docker and `jq`.
-# 5. Runs a Python script inside Docker to generate a LAVA job definition using the updated `cloudData.json`.
-# 
-# Inputs:
-#   - docker_image: The Docker image to use for running commands (default: fastrpc-image:latest).
-#
-# Environment Variables (expected to be set in the workflow):
-#   - MACHINE: Used to determine the DTB filename.
-#   - FIRMWARE: Used to construct the firmware S3 path.
-#   - LAVA_NAME: Used as the target for the LAVA job definition.
-#
-# Outputs:
-#   - Various artifact URLs extracted from `presigned_urls.json` and the presigned S3 URL for the uploaded metadata.
-#
-# Requirements:
-#   - `presigned_urls.json` must exist in the workspace.
-#   - Docker must be available on the runner.
-#   - AWS CLI must be configured for S3 operations.
-#   - The custom action `.github/actions/aws_s3_helper` must be present for uploading files to S3.
-
 name: Test Action
+description: |
+  This GitHub Action composite action prepares data for LAVA job definitions.
+  It reads presigned URLs from a JSON file, creates a metadata.json file,
+  uploads it to S3, and then populates a cloudData.json file with various
+  artifact URLs (image, vmlinux, firmware, modules, dtb, metadata, ramdisk).
+  Finally, it generates a LAVA job definition using these populated data files.
+
 inputs:
   docker_image:
     description: Docker image
@@ -66,7 +48,6 @@ runs:
           const modulesTarUrl = findUrlByFilename('modules.tar.xz');
           const imageUrl = findUrlByFilename('Image');
           const vmlinuxUrl = findUrlByFilename('vmlinux');
-          const ramdiskUrl = findUrlByFilename('ramdisk.gz');
           const firmwareUrl = findUrlByFilename('ramdisk_fastrpc.gz');
           const dtbFilename = `${process.env.MACHINE}.dtb`;
           const dtbUrl = findUrlByFilename(dtbFilename);
@@ -74,13 +55,11 @@ runs:
           core.setOutput('modules_url', modulesTarUrl);
           core.setOutput('image_url', imageUrl);
           core.setOutput('vmlinux_url', vmlinuxUrl);
-          core.setOutput('ramdisk_url', ramdiskUrl);
           core.setOutput('firmware_url', firmwareUrl);
           core.setOutput('dtb_url', dtbUrl);
           console.log(`Modules URL: ${modulesTarUrl}`);
           console.log(`Image URL: ${imageUrl}`);
           console.log(`Vmlinux URL: ${vmlinuxUrl}`);
-          console.log(`Ramdisk URL: ${ramdiskUrl}`);
           console.log(`Ramdisk FastRPC URL: ${firmwareUrl}`);
           console.log(`Dtb URL: ${dtbUrl}`);
 
@@ -101,7 +80,7 @@ runs:
 
     - name: Upload metadata.json
       id: upload_metadata
-      uses: ./.github/actions/aws_s3_helper
+      uses: qualcomm-linux-stg/fastrpc/.github/actions/aws_s3_helper@development
       with:
         local_file: ../job_render/data/metadata.json
         s3_bucket: qli-stg-fastrpc-gh-artifacts
@@ -150,17 +129,7 @@ runs:
           ${{ inputs.docker_image }} \
           jq '.artifacts.vmlinux = env.vmlinux_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
         
-        echo "Creating ramdisk_url ${ramdisk_url}"
-        # using ramdisk_url
-        docker run -i --rm \
-          --user "$(id -u):$(id -g)" \
-          --workdir="$PWD" \
-          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e ramdisk_url="$ramdisk_url" \
-          ${{ inputs.docker_image }} \
-          jq '.artifacts.ramdisk = env.ramdisk_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
-
-        echo "Creating firmware_url ${firmware_url}"
+        echo "Creating FastRPC firmware_url ${firmware_url}"
         # using firmware_url - ramdisk_fastrpc
         docker run -i --rm \
           --user "$(id -u):$(id -g)" \
@@ -179,6 +148,21 @@ runs:
           -e modules_url="$modules_url" \
           ${{ inputs.docker_image }} \
           jq '.artifacts.modules = env.modules_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
+
+    - name: Update firmware to cloudData
+      shell: bash
+      run: |
+        cd ../job_render
+        ramdisk_url="$(aws s3 presign s3://qli-stg-fastrpc-gh-artifacts/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz --expires 7600)"
+        echo "Updating ramdisk_url ${ramdisk_url}"
+        # using ramdisk_url
+        docker run -i --rm \
+          --user "$(id -u):$(id -g)" \
+          --workdir="$PWD" \
+          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          -e ramdisk_url="$ramdisk_url" \
+          ${{ inputs.docker_image }} \
+          jq '.artifacts.ramdisk = env.ramdisk_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
 
     - name: Create lava_job_definition
       shell: bash

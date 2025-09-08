@@ -1,23 +1,29 @@
 name: pre_merge
+description: |
+  This workflow defines the pre_merge CI process for the fastrpc repository.
+  It is triggered on pushes to 'main' or 'development' branches,
+  on pull request events (opened, synchronize, reopened) targeting 'main' or 'development',
+  or manually via workflow_dispatch.
+  Loading: Loads the build matrix from MACHINES.json.
+  Build: Syncs and Builds code for each machine/firmware pair using sync_build.yml.
+  Test: Runs LAVA tests using built artifacts via test.yml.
+  All jobs use reusable workflows and inherit secrets from the caller.
+
 on:
   push:
     branches:
     - 'main'
-    - 'development'
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
     - 'main'
-    - 'development'
   workflow_dispatch:
 
 jobs:
 
   # The loading job will load the build matrix from MACHINES.json
-  # and output it as a JSON string in the build_matrix output variable.
-  # The build and test jobs will use this matrix to run on the specified machines.
   loading:
-    uses: ./.github/workflows/loading.yml
+    uses: qualcomm-linux-stg/fastrpc/.github/workflows/loading.yml@development
     secrets: inherit
 
   # Each job in build and test will run for every {machine, firmware} pair
@@ -28,7 +34,7 @@ jobs:
     strategy:
       matrix:
         include: ${{ fromJSON(needs.loading.outputs.build_matrix) }}
-    uses: ./.github/workflows/build.yml
+    uses: qualcomm-linux-stg/fastrpc/.github/workflows/sync_build.yml@development
     secrets: inherit
     with:
       docker_image: fastrpc-image:latest
@@ -39,7 +45,7 @@ jobs:
   # from the loading job. It will use the test.yml workflow to run tests.
   test:
     needs: [loading, build]
-    uses: ./.github/workflows/test.yml
+    uses: qualcomm-linux-stg/fastrpc/.github/workflows/test.yml@development
     secrets: inherit
     with:
       docker_image: fastrpc-image:latest
