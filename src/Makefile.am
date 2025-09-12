@@ -1,6 +1,6 @@
 lib_LTLIBRARIES =
 
-LIBDSPRPC_CFLAGS = -fno-short-enums -U_DEBUG -DARM_ARCH_7A -DLE_ENABLE -DNO_HAL -DENABLE_UPSTREAM_DRIVER_INTERFACE -DUSE_SYSLOG -I$(top_srcdir)/inc
+LIBDSPRPC_CFLAGS = -fno-short-enums -U_DEBUG -DARM_ARCH_7A -DLE_ENABLE -DENABLE_UPSTREAM_DRIVER_INTERFACE -DUSE_SYSLOG -I$(top_srcdir)/inc
 
 LIBDSPRPC_SOURCES = \
 		fastrpc_apps_user.c \
@@ -26,16 +26,9 @@ LIBDSPRPC_SOURCES = \
 		rpcmem_linux.c \
 		adspmsgd.c \
 		adspmsgd_printf.c \
-		std.c \
 		std_path.c \
-		std_mem.c \
 		std_dtoa.c \
-		std_strlprintf.c \
 		BufBound.c \
-		std_SwapBytes.c \
-		smath.c \
-		atomic.c \
-		cae.c \
 		platform_libs.c \
 		pl_list.c \
 		gpls.c \
@@ -58,9 +51,7 @@ LIBDSPRPC_SOURCES = \
 LIBDEFAULT_LISTENER_SOURCES = \
 				adsp_default_listener.c \
 				adsp_default_listener_stub.c \
-				adsp_default_listener1_stub.c \
-				std.c \
-				std_mem.c
+				adsp_default_listener1_stub.c
 
 if ANDROID_CC
 USE_LOG = -llog
@@ -105,29 +96,42 @@ libsdsp_default_listener_la_DEPENDENCIES = libsdsprpc.la
 libsdsp_default_listener_la_LDFLAGS = libsdsprpc.la -shared -module $(USE_LOG) -version-number @LT_VERSION_NUMBER@
 libsdsp_default_listener_la_CFLAGS = $(SDSP_CFLAGS) -DUSE_SYSLOG
 
+GDSP_CFLAGS = $(LIBDSPRPC_CFLAGS) -DDEFAULT_DOMAIN_ID=5
 
-bin_PROGRAMS = adsprpcd cdsprpcd sdsprpcd
+libgdsprpc_la_SOURCES = $(LIBDSPRPC_SOURCES)
+libgdsprpc_la_LDFLAGS = -ldl -lm $(USE_LOG) -version-number @LT_VERSION_NUMBER@
+libgdsprpc_la_CFLAGS = $(GDSP_CFLAGS)
+
+libgdsp_default_listener_la_SOURCES = $(LIBDEFAULT_LISTENER_SOURCES)
+libgdsp_default_listener_la_DEPENDENCIES = libcdsprpc.la
+libgdsp_default_listener_la_LDFLAGS = libcdsprpc.la -shared -module $(USE_LOG) -version-number @LT_VERSION_NUMBER@
+libgdsp_default_listener_la_CFLAGS = $(GDSP_CFLAGS) -DUSE_SYSLOG
+
+bin_PROGRAMS = adsprpcd cdsprpcd sdsprpcd gdsprpcd
 
 adsprpcddir = $(libdir)
-adsprpcd_SOURCES = adsprpcd.c
+adsprpcd_SOURCES = dsprpcd.c
 adsprpcd_DEPENDENCIES = libadsp_default_listener.la
-adsprpcd_CFLAGS = -I$(top_srcdir)/inc -DDEFAULT_DOMAIN_ID=0 -DUSE_SYSLOG -DNO_HAL
+adsprpcd_CFLAGS = -I$(top_srcdir)/inc -DDEFAULT_DOMAIN_ID=0 -DUSE_SYSLOG -DUSE_ADSP
 adsprpcd_LDADD = -ldl $(USE_LOG)
 
 
 cdsprpcddir = $(libdir)
-cdsprpcd_SOURCES = cdsprpcd.c
+cdsprpcd_SOURCES = dsprpcd.c
 cdsprpcd_DEPENDENCIES = libcdsp_default_listener.la
-cdsprpcd_CFLAGS = -I$(top_srcdir)/inc -DDEFAULT_DOMAIN_ID=3 -DUSE_SYSLOG -DNO_HAL
+cdsprpcd_CFLAGS = -I$(top_srcdir)/inc -DDEFAULT_DOMAIN_ID=3 -DUSE_SYSLOG -DUSE_CDSP
 cdsprpcd_LDADD =  -ldl $(USE_LOG)
 
 
 sdsprpcddir = $(libdir)
-sdsprpcd_SOURCES = cdsprpcd.c
+sdsprpcd_SOURCES = dsprpcd.c
 sdsprpcd_DEPENDENCIES = libsdsp_default_listener.la
-sdsprpcd_CFLAGS = -I$(top_srcdir)/inc -DDEFAULT_DOMAIN_ID=2 -DUSE_SYSLOG -DNO_HAL
+sdsprpcd_CFLAGS = -I$(top_srcdir)/inc -DDEFAULT_DOMAIN_ID=2 -DUSE_SYSLOG -DUSE_SDSP
 sdsprpcd_LDADD =  -ldl $(USE_LOG)
 
 
-otherincludedir = $(includedir)/fastrpc
-otherinclude_HEADERS = $(top_srcdir)/inc/*.h
+gdsprpcddir = $(libdir)
+gdsprpcd_SOURCES = dsprpcd.c
+gdsprpcd_DEPENDENCIES = libcdsp_default_listener.la
+gdsprpcd_CFLAGS = -I$(top_srcdir)/inc -DDEFAULT_DOMAIN_ID=5 -DUSE_SYSLOG -DUSE_GDSP
+gdsprpcd_LDADD =  -ldl $(USE_LOG)

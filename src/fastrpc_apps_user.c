@@ -21,6 +21,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,7 +40,6 @@
 
 #include "AEEQList.h"
 #include "AEEStdErr.h"
-#include "AEEatomic.h"
 #include "AEEstd.h"
 #include "HAP_farf.h"
 #include "adsp_current_process.h"
@@ -73,9 +73,6 @@
 #include "shared.h"
 #include "verify.h"
 #include "fastrpc_context.h"
-#ifndef NO_HAL
-#include "DspClient.h"
-#endif
 #include "fastrpc_process_attributes.h"
 #include "fastrpc_trace.h"
 
@@ -134,7 +131,7 @@ static void check_multilib_util(void);
 
 /* Array to store fastrpc library names. */
 static const char *fastrpc_library[NUM_DOMAINS] = {
-    "libadsprpc.so", "libmdsprpc.so", "libsdsprpc.so", "libcdsprpc.so", "libcdsprpc.so"};
+    "libadsprpc.so", "libmdsprpc.so", "libsdsprpc.so", "libcdsprpc.so", "libcdsprpc.so", "libcdsprpc.so", "libcdsprpc.so"};
 
 /* Array to store env variable names. */
 static char *fastrpc_dsp_lib_refcnt[NUM_DOMAINS];
@@ -262,7 +259,7 @@ const char *ANDROID_DEBUG_VAR_NAME[] = {"fastrpc.process.attrs",
                                         "persist.fastrpc.process.attrs",
                                         "ro.build.type"};
 
-const char *SUBSYSTEM_NAME[] = {"adsp", "mdsp", "sdsp", "cdsp", "cdsp1", "reserved", "reserved", "reserved"};
+const char *SUBSYSTEM_NAME[] = {"adsp", "mdsp", "sdsp", "cdsp", "cdsp1", "gdsp0", "gdsp1", "reserved"};
 
 /* Strings for trace event logging */
 #define INVOKE_BEGIN_TRACE_STR "fastrpc_msg: userspace_call: begin"
@@ -326,11 +323,6 @@ static bool fastrpc_notif_flag = false;
 static int fastrpc_trace = 0;
 static uint32_t fastrpc_wake_lock_enable[NUM_DOMAINS_EXTEND] = {0};
 
-#ifndef NO_HAL
-static pthread_mutex_t dsp_client_mut;
-static void *dsp_client_instance[NUM_SESSIONS];
-#endif
-
 static int domain_init(int domain, int *dev);
 static void domain_deinit(int domain);
 static int close_device_node(int domain_id, int dev);
@@ -338,7 +330,7 @@ extern int apps_mem_table_init(void);
 extern void apps_mem_table_deinit(void);
 
 static uint32_t crc_table[256];
-uint32 timer_expired = 0;
+static atomic_bool timer_expired = false;
 
 void set_thread_context(int domain) {
   if (tlsKey != INVALID_KEY) {
@@ -539,9 +531,9 @@ int fastrpc_get_property_string(fastrpc_properties UserPropKey, char *value,
   }
   char *env = getenv(ENV_DEBUG_VAR_NAME[UserPropKey]);
   if (env != 0) {
-    len = strlen(env);
-    std_memscpy(value, PROPERTY_VALUE_MAX, env, len + 1);
-    return len;
+    strncpy(value, env, PROPERTY_VALUE_MAX - 1);
+    value[PROPERTY_VALUE_MAX - 1] = '\0';
+    return strlen(env);
   }
 #if !defined(LE_ENABLE) // Android platform
 #if !defined(SYSTEM_RPC_LIBRARY) // vendor library
@@ -565,8 +557,9 @@ int fastrpc_get_property_string(fastrpc_properties UserPropKey, char *value,
 #endif
 #else // non-Android platforms
   if (defValue != NULL) {
-    len = strlen(defValue);
-    std_memscpy(value, PROPERTY_VALUE_MAX, defValue, len + 1);
+    strncpy(value, defValue, PROPERTY_VALUE_MAX - 1);
+    value[PROPERTY_VALUE_MAX - 1] = '\0';
+    return strlen(defValue);
   }
   return len;
 #endif
@@ -753,27 +746,33 @@ static int get_domain_from_domain_name(const char *domain_name,
                                        int domain_name_len) {
   int domain = INVALID_DOMAIN_ID;
 
-  if (domain_name_len < std_strlen(SUBSYSTEM_NAME[ADSP_DOMAIN_ID])) {
+  if (domain_name_len < strlen(SUBSYSTEM_NAME[ADSP_DOMAIN_ID])) {
     FARF(ERROR, "ERROR: %s Invalid domain name length: %u\n", __func__,
          domain_name_len);
     goto bail;
   }
   if (domain_name) {
-    if (!std_strncmp(domain_name, SUBSYSTEM_NAME[ADSP_DOMAIN_ID],
-                     std_strlen(SUBSYSTEM_NAME[ADSP_DOMAIN_ID]))) {
+    if (!strncmp(domain_name, SUBSYSTEM_NAME[ADSP_DOMAIN_ID],
+                     strlen(SUBSYSTEM_NAME[ADSP_DOMAIN_ID]))) {
       domain = ADSP_DOMAIN_ID;
-    } else if (!std_strncmp(domain_name, SUBSYSTEM_NAME[MDSP_DOMAIN_ID],
-                            std_strlen(SUBSYSTEM_NAME[MDSP_DOMAIN_ID]))) {
+    } else if (!strncmp(domain_name, SUBSYSTEM_NAME[MDSP_DOMAIN_ID],
+                            strlen(SUBSYSTEM_NAME[MDSP_DOMAIN_ID]))) {
       domain = MDSP_DOMAIN_ID;
-    } else if (!std_strncmp(domain_name, SUBSYSTEM_NAME[SDSP_DOMAIN_ID],
-                            std_strlen(SUBSYSTEM_NAME[SDSP_DOMAIN_ID]))) {
+    } else if (!strncmp(domain_name, SUBSYSTEM_NAME[SDSP_DOMAIN_ID],
+                            strlen(SUBSYSTEM_NAME[SDSP_DOMAIN_ID]))) {
       domain = SDSP_DOMAIN_ID;
-    } else if (!std_strncmp(domain_name, SUBSYSTEM_NAME[CDSP1_DOMAIN_ID],
-                            std_strlen(SUBSYSTEM_NAME[CDSP1_DOMAIN_ID]))) {
+    } else if (!strncmp(domain_name, SUBSYSTEM_NAME[CDSP1_DOMAIN_ID],
+                            strlen(SUBSYSTEM_NAME[CDSP1_DOMAIN_ID]))) {
       domain = CDSP1_DOMAIN_ID;
-    } else if (!std_strncmp(domain_name, SUBSYSTEM_NAME[CDSP_DOMAIN_ID],
-                            std_strlen(SUBSYSTEM_NAME[CDSP_DOMAIN_ID]))) {
+    } else if (!strncmp(domain_name, SUBSYSTEM_NAME[CDSP_DOMAIN_ID],
+                            strlen(SUBSYSTEM_NAME[CDSP_DOMAIN_ID]))) {
       domain = CDSP_DOMAIN_ID;
+    } else if (!strncmp(domain_name, SUBSYSTEM_NAME[GDSP0_DOMAIN_ID],
+                            strlen(SUBSYSTEM_NAME[GDSP0_DOMAIN_ID]))) {
+      domain = GDSP0_DOMAIN_ID;
+    } else if (!strncmp(domain_name, SUBSYSTEM_NAME[GDSP1_DOMAIN_ID],
+                            strlen(SUBSYSTEM_NAME[GDSP1_DOMAIN_ID]))) {
+      domain = GDSP1_DOMAIN_ID;
     } else {
       FARF(ERROR, "ERROR: %s Invalid domain name: %s\n", __func__, domain_name);
     }
@@ -800,6 +799,12 @@ static const char *get_domain_from_id(int domain_id) {
     break;
   case SDSP_DOMAIN_ID:
     uri_domain_suffix = SDSP_DOMAIN;
+    break;
+  case GDSP0_DOMAIN_ID:
+    uri_domain_suffix = GDSP0_DOMAIN;
+    break;
+  case GDSP1_DOMAIN_ID:
+    uri_domain_suffix = GDSP1_DOMAIN;
     break;
   default:
     uri_domain_suffix = "invalid domain";
@@ -836,12 +841,12 @@ static void print_open_handles(int domain) {
 	struct handle_info *hi = NULL;
 	QNode *pn = NULL;
 
-	FARF(ALWAYS, "List of open handles on domain %d:\n", domain);
+	FARF(RUNTIME_RPC_HIGH, "List of open handles on domain %d:\n", domain);
 	pthread_mutex_lock(&hlist[domain].mut);
 	QLIST_FOR_ALL(&hlist[domain].ql, pn) {
 		hi = STD_RECOVER_REC(struct handle_info, qn, pn);
 		if (hi->name)
-			FARF(ALWAYS, "%s, handle 0x%"PRIx64"",
+			FARF(RUNTIME_RPC_HIGH, "%s, handle 0x%"PRIx64"",
 				hi->name, hi->remote);
 	}
 	pthread_mutex_unlock(&hlist[domain].mut);
@@ -861,21 +866,21 @@ static char* get_lib_name(const char *uri) {
 	int nErr = AEE_SUCCESS;
 
   VERIFY(uri);
-  start = std_strstr(uri, LIB_EXTN);
+  start = strstr(uri, LIB_EXTN);
 	if (start) {
-		end = std_strstr(start, SO_EXTN);
+		end = strstr(start, SO_EXTN);
 		if (end && end > start) {
 			/* add extension size to print .so also */
-			length = (unsigned int)(end - start) + std_strlen(SO_EXTN);
+			length = (unsigned int)(end - start) + strlen(SO_EXTN);
 			/* allocate length + 1 to include \0 */
 			VERIFYC(NULL != (library_name =
 				(char*)calloc(1, length + 1)), AEE_ENOMEMORY);
-			std_strlcpy(library_name, start, length + 1);
+			strlcpy(library_name, start, length + 1);
 			return library_name;
 		}
 	}
 bail:
-	FARF(ERROR, "Warning 0x%x: %s failed for uri %s",
+	FARF(RUNTIME_RPC_ERROR, "Warning 0x%x: %s failed for uri %s",
 		nErr, __func__, uri);
   return NULL;
 }
@@ -1093,10 +1098,11 @@ static void fastrpc_timer_callback(void *ptr) {
   fastrpc_timer *frpc_timer = (fastrpc_timer *)ptr;
   int nErr = AEE_SUCCESS;
   remote_rpc_process_exception data;
+  bool expected = false;
 
-  if (1 == atomic_CompareAndExchange(&timer_expired, 1, 0)) {
+  atomic_compare_exchange_strong(&timer_expired, &expected, true);
+  if (expected == true)
     return;
-  }
 
   FARF(ALWAYS,
        "%s fastrpc time out of %d ms on thread %d on domain %d sc 0x%x handle 0x%x\n",
@@ -1166,6 +1172,7 @@ int remote_handle_invoke_domain(int domain, remote_handle handle,
   fastrpc_timer frpc_timer;
   int trace_marker_fd = hlist[domain].trace_marker_fd;
   bool trace_enabled = false;
+  struct fastrpc_invoke_args* args = NULL; 
 
   if (IS_QTF_TRACING_ENABLED(hlist[domain].procattrs) &&
       !IS_STATIC_HANDLE(handle) && trace_marker_fd > 0) {
@@ -1465,7 +1472,6 @@ int remote_handle_invoke(remote_handle handle, uint32_t sc, remote_arg *pra) {
 
   FARF(RUNTIME_RPC_HIGH, "Entering %s, handle %u sc %X remote_arg %p\n",
        __func__, handle, sc, pra);
-  PRINT_WARN_USE_DOMAINS();
   FASTRPC_ATRACE_BEGIN_L("%s called with handle 0x%x , scalar 0x%x", __func__,
                          (int)handle, sc);
   VERIFYC(handle != (remote_handle)-1, AEE_EINVHANDLE);
@@ -1551,7 +1557,6 @@ int remote_handle_invoke_async(remote_handle handle,
 
   FARF(RUNTIME_RPC_HIGH, "Entering %s, handle %u desc %p sc %X remote_arg %p\n",
        __func__, handle, desc, sc, pra);
-  PRINT_WARN_USE_DOMAINS();
   FASTRPC_ATRACE_BEGIN_L("%s called with handle 0x%x , scalar 0x%x", __func__,
                          (int)handle, sc);
   VERIFYC(handle != (remote_handle)-1, AEE_EINVHANDLE);
@@ -1629,27 +1634,27 @@ int remote_handle_open_domain(int domain, const char *name, remote_handle *ph,
     deinit_fastrpc_dsp_lib_refcnt();
     exit(EXIT_FAILURE);
   }
-  if (!std_strncmp(name, ITRANSPORT_PREFIX "geteventfd",
-                   std_strlen(ITRANSPORT_PREFIX "geteventfd"))) {
+  if (!strncmp(name, ITRANSPORT_PREFIX "geteventfd",
+                   strlen(ITRANSPORT_PREFIX "geteventfd"))) {
     FARF(RUNTIME_RPC_HIGH, "getting event fd");
     return listener_android_geteventfd(domain, (int *)ph);
   }
-  if (!std_strncmp(name, ITRANSPORT_PREFIX "attachguestos",
-                   std_strlen(ITRANSPORT_PREFIX "attachguestos"))) {
+  if (!strncmp(name, ITRANSPORT_PREFIX "attachguestos",
+                   strlen(ITRANSPORT_PREFIX "attachguestos"))) {
     FARF(RUNTIME_RPC_HIGH, "setting attach mode to guestos : %d", domain);
     *ph = ATTACHGUESTOS_HANDLE;
     hlist[domain].dsppd = ROOT_PD;
     return AEE_SUCCESS;
   }
-  if (!std_strncmp(name, ITRANSPORT_PREFIX "createstaticpd",
-                   std_strlen(ITRANSPORT_PREFIX "createstaticpd"))) {
+  if (!strncmp(name, ITRANSPORT_PREFIX "createstaticpd",
+                   strlen(ITRANSPORT_PREFIX "createstaticpd"))) {
     FARF(RUNTIME_RPC_HIGH, "creating static pd on domain: %d", domain);
     name_len = strlen(name);
     VERIFYC(NULL !=
                 (pdname_uri = (char *)malloc((name_len + 1) * sizeof(char))),
             AEE_ENOMEMORY);
-    std_strlcpy(pdname_uri, name, name_len + 1);
-    char *pdName = pdname_uri + std_strlen(ITRANSPORT_PREFIX "createstaticpd:");
+    strlcpy(pdname_uri, name, name_len + 1);
+    char *pdName = pdname_uri + strlen(ITRANSPORT_PREFIX "createstaticpd:");
 
     /*
      * Support sessions feature for static PDs.
@@ -1658,39 +1663,40 @@ int remote_handle_open_domain(int domain, const char *name, remote_handle *ph,
      * "createstaticpd:oispd&_dom=adsp&_session=1" to create a session
      * on both static PDs.
      */
-    if (std_strstr(pdName, get_domain_from_id(GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain))) &&
-        std_strstr(pdName, FASTRPC_SESSION_URI)) {
-      std_strlcpy(pdName, pdName,
-                  (std_strlen(pdName) -
-                   std_strlen(get_domain_from_id(GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain))) -
-                   std_strlen(FASTRPC_SESSION1_URI) + 1));
-    } else if (std_strstr(pdName, get_domain_from_id(domain))) {
-      std_strlcpy(
+    if (strstr(pdName, get_domain_from_id(GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain))) &&
+        strstr(pdName, FASTRPC_SESSION_URI)) {
+      strlcpy(pdName, pdName,
+                  (strlen(pdName) -
+                   strlen(get_domain_from_id(GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain))) -
+                   strlen(FASTRPC_SESSION1_URI) + 1));
+    } else if (strstr(pdName, get_domain_from_id(domain))) {
+      strlcpy(
           pdName, pdName,
-          (std_strlen(pdName) - std_strlen(get_domain_from_id(domain)) + 1));
+          (strlen(pdName) - strlen(get_domain_from_id(domain)) + 1));
     }
-    VERIFYC(MAX_DSPPD_NAMELEN > std_strlen(pdName), AEE_EBADPARM);
-    std_strlcpy(hlist[domain].dsppdname, pdName, std_strlen(pdName) + 1);
-    if (!std_strncmp(pdName, "audiopd", std_strlen("audiopd"))) {
+    VERIFYC(MAX_DSPPD_NAMELEN > strlen(pdName), AEE_EBADPARM);
+    strlcpy(hlist[domain].dsppdname, pdName, strlen(pdName) + 1);
+    if (!strncmp(pdName, "audiopd", strlen("audiopd"))) {
       *ph = AUDIOPD_HANDLE;
       hlist[domain].dsppd = AUDIO_STATICPD;
-    } else if (!std_strncmp(pdName, "securepd", std_strlen("securepd"))) {
+    } else if (!strncmp(pdName, "securepd", strlen("securepd"))) {
       FARF(ALWAYS, "%s: attaching to securePD\n", __func__);
       *ph = SECUREPD_HANDLE;
       hlist[domain].dsppd = SECURE_STATICPD;
-    } else if (!std_strncmp(pdName, "sensorspd", std_strlen("sensorspd"))) {
+    } else if (!strncmp(pdName, "sensorspd", strlen("sensorspd"))) {
       *ph = SENSORPD_HANDLE;
       hlist[domain].dsppd = SENSORS_STATICPD;
-    } else if (!std_strncmp(pdName, "rootpd", std_strlen("rootpd"))) {
+    } else if (!strncmp(pdName, "rootpd", strlen("rootpd"))) {
       *ph = ROOTPD_HANDLE;
       hlist[domain].dsppd = GUEST_OS_SHARED;
-    } else if (!std_strncmp(pdName, "oispd", std_strlen("oispd"))) {
+    } else if (!strncmp(pdName, "oispd", strlen("oispd"))) {
       *ph = OISPD_HANDLE;
       hlist[domain].dsppd = OIS_STATICPD;
     }
     return AEE_SUCCESS;
   }
-  if (std_strbegins(name, ITRANSPORT_PREFIX "attachuserpd")) {
+  if (!strncmp(name, ITRANSPORT_PREFIX "attachuserpd",
+	       strlen(ITRANSPORT_PREFIX "attachuserpd"))) {
     FARF(RUNTIME_RPC_HIGH, "setting attach mode to userpd : %d", domain);
     hlist[domain].dsppd = USERPD;
     return AEE_SUCCESS;
@@ -1753,7 +1759,6 @@ int remote_handle_open(const char *name, remote_handle *ph) {
   VERIFY(AEE_SUCCESS == (nErr = fastrpc_init_once()));
 
   FARF(RUNTIME_RPC_HIGH, "Entering %s, name %s\n", __func__, name);
-  PRINT_WARN_USE_DOMAINS();
   FASTRPC_ATRACE_BEGIN_L("%s for %s", __func__, name);
 
   if (!name || !ph) {
@@ -1810,8 +1815,8 @@ int remote_handle64_open(const char *name, remote_handle64 *ph) {
   /* Returning local handle to "geteventd" call causes bad fd error when daemon
      polls on it, hence return remote handle (which is the actual fd) for
      "geteventd" call*/
-  if (!std_strncmp(name, ITRANSPORT_PREFIX "geteventfd",
-                   std_strlen(ITRANSPORT_PREFIX "geteventfd")) ||
+  if (!strncmp(name, ITRANSPORT_PREFIX "geteventfd",
+                   strlen(ITRANSPORT_PREFIX "geteventfd")) ||
                    IS_STATICPD_HANDLE(h)) {
     *ph = h;
   } else {
@@ -1882,7 +1887,7 @@ bail:
            nErr, __func__, h, domain, dlerrstr, strerror(errno));
     }
   } else {
-    FARF(ALWAYS, "%s: closed module with handle 0x%x (skel unload time %" PRIu64 " us)",
+    FARF(RUNTIME_RPC_HIGH, "%s: closed module with handle 0x%x (skel unload time %" PRIu64 " us)",
          __func__, h, t_close);
   }
   if (dlerrstr) {
@@ -1900,7 +1905,6 @@ int remote_handle_close(remote_handle h) {
 
   FARF(RUNTIME_RPC_HIGH, "Entering %s, handle %lu\n", __func__, h);
 
-  PRINT_WARN_USE_DOMAINS();
   VERIFY(AEE_SUCCESS == (nErr = remote_handle_close_domain(domain, h)));
   FASTRPC_PUT_REF(domain);
   fastrpc_update_module_list(NON_DOMAIN_LIST_DEQUEUE, domain, h, NULL, NULL);
@@ -2408,7 +2412,6 @@ int remote_handle_control(uint32_t req, void *data, uint32_t len) {
 
   FARF(RUNTIME_HIGH, "Entering %s, req %d, data %p, size %d\n", __func__, req,
        data, len);
-  PRINT_WARN_USE_DOMAINS();
 
   domain = get_current_domain();
   FASTRPC_GET_REF(domain);
@@ -2506,7 +2509,7 @@ bail:
   return nErr;
 }
 
-int get_unsigned_pd_attribute(uint32 domain, int *unsigned_module) {
+int get_unsigned_pd_attribute(uint32_t domain, int *unsigned_module) {
   int nErr = AEE_SUCCESS;
 
   VERIFYC(hlist, AEE_EBADPARM);
@@ -2852,7 +2855,7 @@ int remote_session_control(uint32_t req, void *data, uint32_t datalen) {
         VERIFY(AEE_SUCCESS == (nErr = fastrpc_notif_register(ii, notif)));
       }
     }
-    FARF(ALWAYS, "%s Register PD status notification request for domain %d\n",
+    FARF(RUNTIME_RPC_HIGH, "%s Register PD status notification request for domain %d\n",
          __func__, domain);
     break;
   }
@@ -2921,7 +2924,7 @@ int remote_session_control(uint32_t req, void *data, uint32_t datalen) {
         hlist[ii].is_session_reserved = true;
         sess->effective_domain_id = ii;
         sess->session_id = jj;
-        std_strlcpy(hlist[ii].sessionname, sess->session_name,
+        strlcpy(hlist[ii].sessionname, sess->session_name,
                     STD_MIN(sess->session_name_len, (MAX_DSPPD_NAMELEN - 1)));
         pthread_mutex_unlock(&hlist[ii].init);
         break;
@@ -3032,20 +3035,26 @@ int get_domain_from_name(const char *uri, uint32_t type) {
   int session_id = 0;
 
   if (uri && type == DOMAIN_NAME_STAND_ALONE) {
-    if (!std_strncmp(uri, ADSP_DOMAIN_NAME, std_strlen(ADSP_DOMAIN_NAME))) {
+    if (!strncmp(uri, ADSP_DOMAIN_NAME, strlen(ADSP_DOMAIN_NAME))) {
       domain = ADSP_DOMAIN_ID;
-    } else if (!std_strncmp(uri, MDSP_DOMAIN_NAME,
-                            std_strlen(MDSP_DOMAIN_NAME))) {
+    } else if (!strncmp(uri, MDSP_DOMAIN_NAME,
+                            strlen(MDSP_DOMAIN_NAME))) {
       domain = MDSP_DOMAIN_ID;
-    } else if (!std_strncmp(uri, SDSP_DOMAIN_NAME,
-                            std_strlen(SDSP_DOMAIN_NAME))) {
+    } else if (!strncmp(uri, SDSP_DOMAIN_NAME,
+                            strlen(SDSP_DOMAIN_NAME))) {
       domain = SDSP_DOMAIN_ID;
-    } else if (!std_strncmp(uri, CDSP1_DOMAIN_NAME,
-                            std_strlen(CDSP1_DOMAIN_NAME))) {
+    } else if (!strncmp(uri, CDSP1_DOMAIN_NAME,
+                            strlen(CDSP1_DOMAIN_NAME))) {
       domain = CDSP1_DOMAIN_ID;
-    } else if (!std_strncmp(uri, CDSP_DOMAIN_NAME,
-                            std_strlen(CDSP_DOMAIN_NAME))) {
+    } else if (!strncmp(uri, CDSP_DOMAIN_NAME,
+                            strlen(CDSP_DOMAIN_NAME))) {
       domain = CDSP_DOMAIN_ID;
+    } else if (!strncmp(uri, GDSP0_DOMAIN_NAME,
+                            strlen(GDSP0_DOMAIN_NAME))) {
+      domain = GDSP0_DOMAIN_ID;
+    } else if (!strncmp(uri, GDSP1_DOMAIN_NAME,
+                            strlen(GDSP1_DOMAIN_NAME))) {
+      domain = GDSP1_DOMAIN_ID;
     } else {
       domain = INVALID_DOMAIN_ID;
       FARF(ERROR, "Invalid domain name: %s\n", uri);
@@ -3053,23 +3062,27 @@ int get_domain_from_name(const char *uri, uint32_t type) {
     }
   }
   if (uri && type == DOMAIN_NAME_IN_URI) {
-    if (std_strstr(uri, ADSP_DOMAIN)) {
+    if (strstr(uri, ADSP_DOMAIN)) {
       domain = ADSP_DOMAIN_ID;
-    } else if (std_strstr(uri, MDSP_DOMAIN)) {
+    } else if (strstr(uri, MDSP_DOMAIN)) {
       domain = MDSP_DOMAIN_ID;
-    } else if (std_strstr(uri, SDSP_DOMAIN)) {
+    } else if (strstr(uri, SDSP_DOMAIN)) {
       domain = SDSP_DOMAIN_ID;
-    } else if (std_strstr(uri, CDSP1_DOMAIN)) {
+    } else if (strstr(uri, CDSP1_DOMAIN)) {
       domain = CDSP1_DOMAIN_ID;
-    } else if (std_strstr(uri, CDSP_DOMAIN)) {
+    } else if (strstr(uri, CDSP_DOMAIN)) {
       domain = CDSP_DOMAIN_ID;
+    } else if (strstr(uri, GDSP0_DOMAIN)) {
+      domain = GDSP0_DOMAIN_ID;
+    } else if (strstr(uri, GDSP1_DOMAIN)) {
+      domain = GDSP1_DOMAIN_ID;
     } else {
       domain = INVALID_DOMAIN_ID;
       FARF(ERROR, "Invalid domain name: %s\n", uri);
       goto bail;
     }
-    if (NULL != (session_uri = std_strstr(uri, FASTRPC_SESSION_URI))) {
-      session_uri = session_uri + std_strlen(FASTRPC_SESSION_URI);
+    if (NULL != (session_uri = strstr(uri, FASTRPC_SESSION_URI))) {
+      session_uri = session_uri + strlen(FASTRPC_SESSION_URI);
       // Get Session ID from URI
       session_id = strtol(session_uri, NULL, 10);
       if (session_id < NUM_SESSIONS) {
@@ -3152,6 +3165,8 @@ static int attach_guestos(int domain) {
   case CDSP_DOMAIN_ID:
   case SDSP_DOMAIN_ID:
   case CDSP1_DOMAIN_ID:
+  case GDSP0_DOMAIN_ID:
+  case GDSP1_DOMAIN_ID:
     attach = USERPD;
     break;
   default:
@@ -3170,7 +3185,7 @@ static void domain_deinit(int domain) {
     return;
   }
   olddev = hlist[domain].dev;
-  FARF(ALWAYS, "%s for domain %d: dev %d", __func__, domain, olddev);
+  FARF(RUNTIME_RPC_HIGH, "%s for domain %d: dev %d", __func__, domain, olddev);
   if (olddev != -1) {
 
     FASTRPC_ATRACE_BEGIN_L("%s called for handle 0x%x, domain %d, dev %d",
@@ -3219,8 +3234,9 @@ static void domain_deinit(int domain) {
     memset(hlist[domain].dsppdname, 0, MAX_DSPPD_NAMELEN);
     memset(hlist[domain].sessionname, 0, MAX_DSPPD_NAMELEN);
     PROFILE_ALWAYS(&t_kill, close_device_node(domain, olddev););
-    FARF(ALWAYS, "%s: closed device %d on domain %d (kill time %" PRIu64 " us)",
+    FARF(RUNTIME_RPC_HIGH, "%s: closed device %d on domain %d (kill time %" PRIu64 " us)",
          __func__, olddev, domain, t_kill);
+    FARF(ALWAYS, "%s done for domain %d.", __func__, domain);
     FASTRPC_ATRACE_END();
   }
   hlist[domain].proc_sharedbuf_cur_addr = NULL;
@@ -3256,6 +3272,12 @@ static const char *get_domain_name(int domain_id) {
     break;
   case CDSP1_DOMAIN_ID:
     name = CDSP1RPC_DEVICE;
+    break;
+  case GDSP0_DOMAIN_ID:
+    name = GDSP0RPC_DEVICE;
+    break;
+  case GDSP1_DOMAIN_ID:
+    name = GDSP1RPC_DEVICE;
     break;
   default:
     name = DEFAULT_DEVICE;
@@ -3301,6 +3323,8 @@ int open_device_node(int domain_id) {
     break;
   case CDSP_DOMAIN_ID:
   case CDSP1_DOMAIN_ID:
+  case GDSP0_DOMAIN_ID:
+  case GDSP1_DOMAIN_ID:
     dev = open(get_secure_domain_name(domain), O_NONBLOCK);
     if ((dev < 0) && ((errno == ENOENT) || (errno == EACCES))) {
       FARF(RUNTIME_RPC_HIGH,
@@ -3317,21 +3341,6 @@ int open_device_node(int domain_id) {
              "falling back to node %s \n",
              get_domain_name(domain), domain, strerror(errno), DEFAULT_DEVICE);
         dev = open(DEFAULT_DEVICE, O_NONBLOCK);
-#ifndef NO_HAL
-        if ((dev < 0) && (errno == EACCES)) {
-          FARF(ALWAYS,
-               "%s: no access to default device of domain %d, open thru HAL, "
-               "(sess_id %d)\n",
-               __func__, domain, sess_id);
-          VERIFYC(sess_id < NUM_SESSIONS, AEE_EBADITEM);
-          pthread_mutex_lock(&dsp_client_mut);
-          if (!dsp_client_instance[sess_id]) {
-            dsp_client_instance[sess_id] = create_dsp_client_instance();
-          }
-          pthread_mutex_unlock(&dsp_client_mut);
-          dev = open_hal_session(dsp_client_instance[sess_id], domain_id);
-        }
-#endif
       }
     }
     break;
@@ -3350,23 +3359,9 @@ int open_device_node(int domain_id) {
 }
 
 static int close_device_node(int domain_id, int dev) {
-  int nErr = 0, domain = GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain_id);
-
-#ifndef NO_HAL
-  int sess_id = GET_SESSION_ID_FROM_DOMAIN_ID(domain_id);
-  if ((domain == CDSP_DOMAIN_ID) ||
-   (domain == CDSP1_DOMAIN_ID)) &&
-   dsp_client_instance[sess_id]) {
-    nErr = close_hal_session(dsp_client_instance[sess_id], domain_id, dev);
-    FARF(ALWAYS, "%s: close device %d thru HAL on session %d\n", __func__, dev,
-         sess_id);
-  } else {
-#endif
-    nErr = close(dev);
-    FARF(ALWAYS, "%s: closed dev %d on domain %d", __func__, dev, domain_id);
-#ifndef NO_HAL
-  }
-#endif
+  int nErr = 0;
+  nErr = close(dev);
+  FARF(ALWAYS, "%s: closed dev %d on domain %d", __func__, dev, domain_id);
   return nErr;
 }
 
@@ -3418,9 +3413,9 @@ static int get_process_attrs(int domain) {
   return attrs;
 }
 
-static void get_process_testsig(apps_std_FILE *fp, uint64 *ptrlen) {
+static void get_process_testsig(apps_std_FILE *fp, uint64_t *ptrlen) {
   int nErr = 0;
-  uint64 len = 0;
+  uint64_t len = 0;
   char testsig[PROPERTY_VALUE_MAX];
 
   if (fp == NULL || ptrlen == NULL)
@@ -3442,7 +3437,7 @@ static int open_shell(int domain_id, apps_std_FILE *fh, int unsigned_shell) {
   char *absName = NULL;
   char *shell_absName = NULL;
   char *domain_str = NULL;
-  uint16 shell_absNameLen = 0, absNameLen = 0;
+  uint16_t shell_absNameLen = 0, absNameLen = 0;
   ;
   int nErr = AEE_SUCCESS;
   int domain = GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain_id);
@@ -3458,57 +3453,57 @@ static int open_shell(int domain_id, apps_std_FILE *fh, int unsigned_shell) {
   VERIFYC(NULL != (domain_str = (char *)malloc(sizeof(domain))), AEE_ENOMEMORY);
   snprintf(domain_str, sizeof(domain), "%d", domain);
 
-  shell_absNameLen = std_strlen(shell_name) + std_strlen(domain_str) + 1;
+  shell_absNameLen = strlen(shell_name) + strlen(domain_str) + 1;
 
   VERIFYC(NULL !=
               (shell_absName = (char *)malloc(sizeof(char) * shell_absNameLen)),
           AEE_ENOMEMORY);
-  std_strlcpy(shell_absName, shell_name, shell_absNameLen);
+  strlcpy(shell_absName, shell_name, shell_absNameLen);
 
-  std_strlcat(shell_absName, domain_str, shell_absNameLen);
+  strlcat(shell_absName, domain_str, shell_absNameLen);
 
-  absNameLen = std_strlen(DSP_MOUNT_LOCATION) + shell_absNameLen + 1;
+  absNameLen = strlen(DSP_MOUNT_LOCATION) + shell_absNameLen + 1;
   VERIFYC(NULL != (absName = (char *)malloc(sizeof(char) * absNameLen)),
           AEE_ENOMEMORY);
-  std_strlcpy(absName, DSP_MOUNT_LOCATION, absNameLen);
-  std_strlcat(absName, shell_absName, absNameLen);
+  strlcpy(absName, DSP_MOUNT_LOCATION, absNameLen);
+  strlcat(absName, shell_absName, absNameLen);
 
   nErr = apps_std_fopen(absName, "r", fh);
   if (nErr) {
-    absNameLen = std_strlen(DSP_DOM_LOCATION) + shell_absNameLen + 1;
+    absNameLen = strlen(DSP_DOM_LOCATION) + shell_absNameLen + 1;
     VERIFYC(NULL !=
                 (absName = (char *)realloc(absName, sizeof(char) * absNameLen)),
             AEE_ENOMEMORY);
-    std_strlcpy(absName, DSP_MOUNT_LOCATION, absNameLen);
-    std_strlcat(absName, SUBSYSTEM_NAME[domain], absNameLen);
-    std_strlcat(absName, "/", absNameLen);
-    std_strlcat(absName, shell_absName, absNameLen);
+    strlcpy(absName, DSP_MOUNT_LOCATION, absNameLen);
+    strlcat(absName, SUBSYSTEM_NAME[domain], absNameLen);
+    strlcat(absName, "/", absNameLen);
+    strlcat(absName, shell_absName, absNameLen);
     nErr = apps_std_fopen(absName, "r", fh);
   }
   if (nErr) {
-    absNameLen = std_strlen(VENDOR_DSP_LOCATION) + shell_absNameLen + 1;
+    absNameLen = strlen(VENDOR_DSP_LOCATION) + shell_absNameLen + 1;
     VERIFYC(NULL !=
                 (absName = (char *)realloc(absName, sizeof(char) * absNameLen)),
             AEE_ENOMEMORY);
-    std_strlcpy(absName, VENDOR_DSP_LOCATION, absNameLen);
-    std_strlcat(absName, shell_absName, absNameLen);
+    strlcpy(absName, VENDOR_DSP_LOCATION, absNameLen);
+    strlcat(absName, shell_absName, absNameLen);
 
     nErr = apps_std_fopen(absName, "r", fh);
     if (nErr) {
-      absNameLen = std_strlen(VENDOR_DOM_LOCATION) + shell_absNameLen + 1;
+      absNameLen = strlen(VENDOR_DOM_LOCATION) + shell_absNameLen + 1;
       VERIFYC(NULL != (absName =
                            (char *)realloc(absName, sizeof(char) * absNameLen)),
               AEE_ENOMEMORY);
-      std_strlcpy(absName, VENDOR_DSP_LOCATION, absNameLen);
-      std_strlcat(absName, SUBSYSTEM_NAME[domain], absNameLen);
-      std_strlcat(absName, "/", absNameLen);
-      std_strlcat(absName, shell_absName, absNameLen);
+      strlcpy(absName, VENDOR_DSP_LOCATION, absNameLen);
+      strlcat(absName, SUBSYSTEM_NAME[domain], absNameLen);
+      strlcat(absName, "/", absNameLen);
+      strlcat(absName, shell_absName, absNameLen);
 
       nErr = apps_std_fopen(absName, "r", fh);
     }
   }
   if (!nErr)
-    FARF(ALWAYS, "Successfully opened %s, domain %d", absName, domain);
+    FARF(RUNTIME_RPC_HIGH, "Successfully opened %s, domain %d", absName, domain);
 bail:
   if (domain_str) {
     free(domain_str);
@@ -3552,7 +3547,8 @@ static int fastrpc_enable_kernel_optimizations(int domain) {
       dom = GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain);
   const uint32_t max_concurrency = 25;
 
-  if (((dom != CDSP_DOMAIN_ID) && (dom != CDSP1_DOMAIN_ID)) || (hlist[domain].dsppd != USERPD))
+  if (((dom != CDSP_DOMAIN_ID) && (dom != CDSP1_DOMAIN_ID) &&
+    (dom != GDSP0_DOMAIN_ID) && (dom != GDSP1_DOMAIN_ID)) || (hlist[domain].dsppd != USERPD))
     goto bail;
   errno = 0;
 
@@ -3568,7 +3564,7 @@ static int fastrpc_enable_kernel_optimizations(int domain) {
   }
 bail:
   if (nErr) {
-    FARF(ERROR, "Error 0x%x: %s failed for domain %d (%s)\n", nErr, __func__,
+    FARF(RUNTIME_RPC_ERROR, "Error 0x%x: %s failed for domain %d (%s)\n", nErr, __func__,
          domain, strerror(errno));
   }
   /*
@@ -3617,7 +3613,7 @@ void print_process_attrs(int domain) {
   if (fastrpc_config_is_logpacket_enabled())
     logpkt = true;
   FARF(ALWAYS,
-       "Created user PD on domain %d, dbg_trace 0x%x, enabled attr=> RPC "
+       "Info: Created user PD on domain %d, dbg_trace 0x%x, enabled attr=> RPC "
        "timeout:%d, Dbg Mode:%s, CRC:%s, Unsigned:%s, Signed:%s, Adapt QOS:%s, "
        "PD dump: (Config:%s, Dbg:%s), Perf: (Kernel:%s, DSP:%s), Iregion:%s, "
        "QTF:%s, UAF:%s userPD initmem len:0x%x, Log pkt: %s",
@@ -3637,7 +3633,7 @@ static int remote_init(int domain) {
   apps_std_FILE fh = -1;
   int pd_type = 0, errno_save = 0;
   uint32_t info = GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain);
-  int one_mb = 1024 * 1024, shared_buf_support = 0;
+  int shared_buf_support = 0;
   char *file = NULL;
   int flags = 0, filelen = 0, memlen = 0, filefd = -1;
 
@@ -3716,14 +3712,14 @@ static int remote_init(int domain) {
            "%s: attaching to guest OS/Secure PD (attach %d) for domain %d",
            __func__, pd_type, domain);
       if (pd_type == SECURE_STATICPD) {
-        file = calloc(1, (int)(std_strlen(hlist[domain].dsppdname) + 1));
+        file = calloc(1, (int)(strlen(hlist[domain].dsppdname) + 1));
         VERIFYC(file, AEE_ENOMEMORY);
-        std_strlcpy((char *)file, hlist[domain].dsppdname,
-                    std_strlen(hlist[domain].dsppdname) + 1);
-        filelen = std_strlen(hlist[domain].dsppdname) + 1;
+        strlcpy((char *)file, hlist[domain].dsppdname,
+                    strlen(hlist[domain].dsppdname) + 1);
+        filelen = strlen(hlist[domain].dsppdname) + 1;
       }
       flags = FASTRPC_INIT_ATTACH;
-      ioErr = ioctl_init(dev, flags, 0, (byte *)file, filelen, -1, 0, 0, 0, 0);
+      ioErr = ioctl_init(dev, flags, 0, (unsigned char *)file, filelen, -1, 0, 0, 0, 0);
       if (file) {
         free(file);
         file = NULL;
@@ -3735,18 +3731,18 @@ static int remote_init(int domain) {
            __func__, domain);
       file =
           rpcmem_alloc_internal(0, RPCMEM_HEAP_DEFAULT,
-                                (int)(std_strlen(hlist[domain].dsppdname) + 1));
+                                (int)(strlen(hlist[domain].dsppdname) + 1));
       VERIFYC(file, AEE_ENORPCMEMORY);
-      std_strlcpy((char *)file, hlist[domain].dsppdname,
-                  std_strlen(hlist[domain].dsppdname) + 1);
-      filelen = std_strlen(hlist[domain].dsppdname) + 1;
+      strlcpy((char *)file, hlist[domain].dsppdname,
+                  strlen(hlist[domain].dsppdname) + 1);
+      filelen = strlen(hlist[domain].dsppdname) + 1;
       flags = FASTRPC_INIT_CREATE_STATIC;
       // 3MB of remote heap for dynamic loading is available only for Audio PD.
       if (pd_type == AUDIO_STATICPD) {
         memlen = 3 * 1024 * 1024;
       }
       ioErr =
-          ioctl_init(dev, flags, 0, (byte *)file, filelen, -1, 0, memlen, 0, 0);
+          ioctl_init(dev, flags, 0, (unsigned char *)file, filelen, -1, 0, memlen, 0, 0);
       if (ioErr) {
         nErr = convert_kernel_to_user_error(ioErr, errno);
         goto bail;
@@ -3755,14 +3751,14 @@ static int remote_init(int domain) {
       FARF(RUNTIME_RPC_HIGH, "%s: attaching to sensors PD for domain %d",
            __func__, domain);
       flags = FASTRPC_INIT_ATTACH_SENSORS;
-      ioErr = ioctl_init(dev, flags, 0, (byte *)0, 0, -1, 0, 0, 0, 0);
+      ioErr = ioctl_init(dev, flags, 0, (unsigned char *)0, 0, -1, 0, 0, 0, 0);
       VERIFYC((!ioErr || errno == ENOTTY || errno == ENXIO || errno == EINVAL),
               AEE_ERPC);
     } else if (pd_type == USERPD) {
-      uint64 len = 0;
+      uint64_t len = 0;
       int readlen = 0, eof;
       apps_std_FILE fsig = -1;
-      uint64 siglen = 0;
+      uint64_t siglen = 0;
 
 #ifndef VIRTUAL_FASTRPC
 #if !defined(SYSTEM_RPC_LIBRARY)
@@ -3782,7 +3778,7 @@ static int remote_init(int domain) {
         file = rpcmem_alloc_internal(0, RPCMEM_HEAP_DEFAULT, (size_t)filelen);
         VERIFYC(file, AEE_ENORPCMEMORY);
         VERIFY(AEE_SUCCESS ==
-               (nErr = apps_std_fread(fh, (byte *)file, len, &readlen, &eof)));
+               (nErr = apps_std_fread(fh, (unsigned char *)file, len, &readlen, &eof)));
         VERIFYC((int)len == readlen, AEE_EFILE);
         filefd = rpcmem_to_fd_internal((void *)file);
         filelen = (int)len;
@@ -3807,13 +3803,13 @@ static int remote_init(int domain) {
       if (hlist[domain].procattrs) {
         if (siglen && fsig != -1) {
           VERIFY(AEE_SUCCESS ==
-                 (nErr = apps_std_fread(fsig, (byte *)(file + len), siglen,
+                 (nErr = apps_std_fread(fsig, (unsigned char *)(file + len), siglen,
                                         &readlen, &eof)));
-          VERIFYC(siglen == (uint64)readlen, AEE_EFILE);
+          VERIFYC(siglen == (uint64_t)readlen, AEE_EFILE);
           filelen = len + siglen;
         }
       }
-      ioErr = ioctl_init(dev, flags, hlist[domain].procattrs, (byte *)file,
+      ioErr = ioctl_init(dev, flags, hlist[domain].procattrs, (unsigned char *)file,
                          filelen, filefd, NULL, memlen, -1, siglen);
       if (ioErr) {
         nErr = ioErr;
@@ -3865,7 +3861,7 @@ bail:
 __attribute__((destructor)) static void close_dev(void) {
   int i;
 
-  FARF(ALWAYS, "%s: unloading library %s", __func__,
+  FARF(RUNTIME_RPC_HIGH, "%s: unloading library %s", __func__,
        fastrpc_library[DEFAULT_DOMAIN_ID]);
   FOR_EACH_EFFECTIVE_DOMAIN_ID(i) {
     domain_deinit(i);
@@ -4005,7 +4001,7 @@ static int domain_init(int domain, int *dev) {
   VERIFY(AEE_SUCCESS == (nErr = fastrpc_mem_open(domain)));
   VERIFY(AEE_SUCCESS == (nErr = apps_mem_init(domain)));
 
-  if (dom == CDSP_DOMAIN_ID || dom == CDSP1_DOMAIN_ID) {
+  if (dom == CDSP_DOMAIN_ID || dom == CDSP1_DOMAIN_ID || dom == GDSP0_DOMAIN_ID || dom == GDSP1_DOMAIN_ID) {
     panic_handle = get_adsp_current_process1_handle(domain);
     if (panic_handle != INVALID_HANDLE) {
       int ret = -1;
@@ -4110,13 +4106,6 @@ static void fastrpc_apps_user_deinit(void) {
     free(hlist);
     hlist = NULL;
   }
-#ifndef NO_HAL
-  for (i = 0; i < NUM_SESSIONS; i++) {
-    destroy_dsp_client_instance(dsp_client_instance[i]);
-    dsp_client_instance[i] = NULL;
-  }
-  pthread_mutex_destroy(&dsp_client_mut);
-#endif
   fastrpc_context_table_deinit();
   deinit_process_signals();
   fastrpc_notif_deinit();
@@ -4187,9 +4176,6 @@ static int fastrpc_apps_user_init(void) {
   fastrpc_log_init();
   fastrpc_config_init();
   pthread_mutex_init(&update_notif_list_mut, 0);
-#ifndef NO_HAL
-  pthread_mutex_init(&dsp_client_mut, 0);
-#endif
   VERIFYC(NULL != (hlist = calloc(NUM_DOMAINS_EXTEND, sizeof(*hlist))),
           AEE_ENOMEMORY);
   FOR_EACH_EFFECTIVE_DOMAIN_ID(i) {
@@ -4325,7 +4311,7 @@ __CONSTRUCTOR_ATTRIBUTE__
 static void multidsplib_env_init(void) {
   const char *local_fastrpc_lib_refcnt[NUM_DOMAINS] = {
       "FASTRPC_ADSP_REFCNT", "FASTRPC_MDSP_REFCNT", "FASTRPC_SDSP_REFCNT",
-      "FASTRPC_CDSP_REFCNT", "FASTRPC_CDSP1_REFCNT"};
+      "FASTRPC_CDSP_REFCNT", "FASTRPC_CDSP1_REFCNT", "FASTRPC_GDSP0_REFCNT", "FASTRPC_GDSP1_REFCNT"};
   char buf[64] = {0};
   size_t env_name_len = 0;
   char *env_name = NULL;
@@ -4340,7 +4326,7 @@ static void multidsplib_env_init(void) {
     env_name_len = (sizeof(char) * strlen(buf)) + 1;
     env_name = malloc(env_name_len);
     if (env_name) {
-      std_strlcpy(env_name, buf, env_name_len);
+      strlcpy(env_name, buf, env_name_len);
       fastrpc_dsp_lib_refcnt[ii] = env_name;
     } else {
       FARF(ERROR,

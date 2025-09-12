@@ -5,7 +5,9 @@ bin_PROGRAMS = fastrpc_test
 fastrpc_test_SOURCES = fastrpc_test.c
 
 # Define the compiler flags for the test program
-fastrpc_test_CFLAGS = -I$(top_srcdir)/inc -DUSE_SYSLOG
+fastrpc_test_CFLAGS = -I$(top_srcdir)/inc -DUSE_SYSLOG \
+                      -Dtestlibdir=\"$(testlibdir)\" \
+                      -Dtestdspdir=\"$(testdspdir)\"
 
 if ANDROID_CC
 USE_LOG = -llog
@@ -19,7 +21,7 @@ if ANDROID_CC
 fastrpc_test_CFLAGS += -DANDROID
 endif
 
-TESTS = \
+TESTLIST = \
 	calculator \
 	hap_example \
 	multithreading
@@ -27,7 +29,7 @@ TESTS = \
 DSPS = v68 v75
 
 testlibdir = $(libdir)/fastrpc_test
-testlib_DATA = $(foreach test,$(TESTS),linux/lib$(test).so)
+dist_testlib_DATA = $(foreach test,$(TESTLIST),linux/lib$(test).so)
 
 testdspdir = $(datadir)/fastrpc_test
-nobase_testdsp_DATA = $(foreach test,$(TESTS),$(foreach dsp,$(DSPS),$(dsp)/lib$(test)_skel.so))
+nobase_dist_testdsp_DATA = $(foreach test,$(TESTLIST),$(foreach dsp,$(DSPS),$(dsp)/lib$(test)_skel.so))

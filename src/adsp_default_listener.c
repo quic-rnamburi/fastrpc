@@ -38,18 +38,24 @@
 #define MDSP_SECURE_DEVICE_NAME "fastrpc-mdsp-secure"
 #define CDSP_SECURE_DEVICE_NAME "fastrpc-cdsp-secure"
 #define CDSP1_SECURE_DEVICE_NAME "fastrpc-cdsp1-secure"
+#define GDSP0_SECURE_DEVICE_NAME "fastrpc-gdsp0-secure"
+#define GDSP1_SECURE_DEVICE_NAME "fastrpc-gdsp1-secure"
 #define ADSP_DEVICE_NAME "fastrpc-adsp"
 #define SDSP_DEVICE_NAME "fastrpc-sdsp"
 #define MDSP_DEVICE_NAME "fastrpc-mdsp"
 #define CDSP_DEVICE_NAME "fastrpc-cdsp"
 #define CDSP1_DEVICE_NAME "fastrpc-cdsp1"
+#define GDSP0_DEVICE_NAME "fastrpc-gdsp0"
+#define GDSP1_DEVICE_NAME "fastrpc-gdsp1"
 
 // Array of supported domain names and its corresponding ID's.
 static domain_t supported_domains[] = {{ADSP_DOMAIN_ID, ADSP_DOMAIN},
                                        {MDSP_DOMAIN_ID, MDSP_DOMAIN},
                                        {SDSP_DOMAIN_ID, SDSP_DOMAIN},
                                        {CDSP_DOMAIN_ID, CDSP_DOMAIN},
-                                       {CDSP1_DOMAIN_ID, CDSP1_DOMAIN}};
+                                       {CDSP1_DOMAIN_ID, CDSP1_DOMAIN},
+                                       {GDSP0_DOMAIN_ID, GDSP0_DOMAIN},
+                                       {GDSP1_DOMAIN_ID, GDSP1_DOMAIN}};
 
 // Get domain name for the domain id.
 static domain_t *get_domain_uri(int domain_id) {
@@ -84,6 +90,12 @@ static const char *get_secure_device_name(int domain_id) {
 	case CDSP1_DOMAIN_ID:
 		name = CDSP1_SECURE_DEVICE_NAME;
 		break;
+	case GDSP0_DOMAIN_ID:
+		name = GDSP0_SECURE_DEVICE_NAME;
+		break;
+	case GDSP1_DOMAIN_ID:
+		name = GDSP1_SECURE_DEVICE_NAME;
+		break;
 	default:
 		name = DEFAULT_DEVICE;
 		break;
@@ -112,6 +124,12 @@ static const char *get_default_device_name(int domain_id) {
 	case CDSP1_DOMAIN_ID:
 		name = CDSP1_DEVICE_NAME;
 		break;
+	case GDSP0_DOMAIN_ID:
+		name = GDSP0_DEVICE_NAME;
+		break;
+	case GDSP1_DOMAIN_ID:
+		name = GDSP1_DEVICE_NAME;
+		break;
 	default:
 		name = DEFAULT_DEVICE;
 		break;
@@ -128,11 +146,11 @@ static const char *get_default_device_name(int domain_id) {
  *	True: Device node exists
  *	False: Device node does not exist
  */
-static boolean fastrpc_dev_exists(const char* dev_name)
+static bool fastrpc_dev_exists(const char* dev_name)
 {
 	struct stat buffer;
 	char *path = NULL;
-	uint64 len;
+	uint64_t len;
 
 	len = snprintf(0, 0, "/dev/%s", dev_name) + 1;
 	if(NULL == (path = (char *)malloc(len * sizeof(char))))
@@ -212,8 +230,8 @@ static int fastrpc_wait_for_device(int domain)
 			event = (struct inotify_event *) ptr;
 			/* Check if the event corresponds to the creation of the device node. */
 			if (event->wd == watch_fd && (event->mask & IN_CREATE) &&
-				((std_strcmp(sec_dev_name, event->name) == 0) ||
-				(std_strcmp(def_dev_name, event->name) == 0))) {
+				((strcmp(sec_dev_name, event->name) == 0) ||
+				(strcmp(def_dev_name, event->name) == 0))) {
 				/* Device node created, process proceed to open and use it. */
 				VERIFY_IPRINTF("Device node %s created!\n", event->name);
 				goto bail; /* Exit the loop after device creation is detected. */
@@ -267,19 +285,19 @@ int adsp_default_listener_start(int argc, char *argv[]) {
             AEE_ENOMEMORY);
 
     // Copy URI to allocated memory
-    if (!std_strncmp(argv[1], ROOTPD_NAME, std_strlen(argv[1]))) {
-      std_strlcpy(name, ITRANSPORT_PREFIX ATTACH_GUESTOS,
+    if (!strncmp(argv[1], ROOTPD_NAME, strlen(argv[1]))) {
+      strlcpy(name, ITRANSPORT_PREFIX ATTACH_GUESTOS,
                   strlen(ITRANSPORT_PREFIX ATTACH_GUESTOS) + 1);
     } else {
-      std_strlcpy(name, ITRANSPORT_PREFIX CREATE_STATICPD,
+      strlcpy(name, ITRANSPORT_PREFIX CREATE_STATICPD,
                   strlen(ITRANSPORT_PREFIX CREATE_STATICPD) + 1);
-      std_strlcat(name, argv[1],
+      strlcat(name, argv[1],
                   strlen(ITRANSPORT_PREFIX CREATE_STATICPD) + strlen(argv[1]) +
                       1);
     }
 
     // Concatenate domain to the URI
-    std_strlcat(name, dsp_domain->uri, namelen + 1);
+    strlcat(name, dsp_domain->uri, namelen + 1);
 
     // Open static process handle
     VERIFY(AEE_SUCCESS == (nErr = remote_handle64_open(name, &fd)));
@@ -306,15 +324,15 @@ int adsp_default_listener_start(int argc, char *argv[]) {
             AEE_ENOMEMORY);
 
     // Copy URI to allocated memory
-    std_strlcpy(name, ITRANSPORT_PREFIX CREATE_STATICPD,
+    strlcpy(name, ITRANSPORT_PREFIX CREATE_STATICPD,
                 strlen(ITRANSPORT_PREFIX CREATE_STATICPD) + 1);
-    std_strlcat(name, argv[1], namelen + 1);
+    strlcat(name, argv[1], namelen + 1);
   } else {
     // If no arguments passed, default/rootpd daemon of remote subsystem
     namelen = strlen(ITRANSPORT_PREFIX ATTACH_GUESTOS);
     VERIFYC(NULL != (name = (char *)malloc((namelen + 1) * sizeof(char))),
             AEE_ENOMEMORY);
-    std_strlcpy(name, ITRANSPORT_PREFIX ATTACH_GUESTOS,
+    strlcpy(name, ITRANSPORT_PREFIX ATTACH_GUESTOS,
                 strlen(ITRANSPORT_PREFIX ATTACH_GUESTOS) + 1);
   }
 
