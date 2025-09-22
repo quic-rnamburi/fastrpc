@@ -30,59 +30,76 @@ runs:
         --workdir="$PWD" \
         -v "$(dirname $PWD)":"$(dirname $PWD)" \
         ${{ inputs.docker_image }} bash -c "
+          chmod +x gitcompile
           ./gitcompile --host=aarch64-linux-gnu
-          make install DESTDIR=${{ inputs.workspace_path }}/artifacts/ramdisk_fastrpc
+          make install DESTDIR=${{ inputs.workspace_path }}/artifacts/ramdisk_staging_dir
         "
         echo "::endgroup::"
 
-    - name: Build kernel using Docker Image
+    - name: Copy FastRPC firmware into ramdisk staging
       shell: bash
+      working-directory: ${{ inputs.workspace_path }}
       run: |
-        cd ${{ inputs.workspace_path }}/kernel
+        echo "Copying FastRPC firmware into ramdisk staging directory"
+        # Copy firmware from firmware_dir into the ramdisk staging area
+        cp -a firmware_dir/. artifacts/ramdisk_staging_dir/
 
-        echo "::group::$(printf '__________ %-100s' 'Compile kernel' | tr ' ' _)"
-        docker run -i --rm \
-          --user $(id -u):$(id -g) \
-          --workdir="$PWD" \
-          -v "$(dirname $PWD)":"$(dirname $PWD)" \
-          ${{ inputs.docker_image }} bash -c "
-            make O=../kobj defconfig
-            make O=../kobj -j$(nproc)
-            make O=../kobj -j$(nproc) dir-pkg INSTALL_MOD_STRIP=1
-          "
-        echo "::endgroup::"
-
-    - name: Package Files into ramdisk
+    - name: Download Kernel artifact
       shell: bash
+      uses: actions/download-artifact@v3
+      with:
+        name: kobj-artifact
+        path: downloaded_kobj # This path is relative to ${{ github.workspace }}
+
+    - name: Unzip DLKM, Copy to Ramdisk Staging, and Final Repack
+      shell: bash
+      # This step needs to operate on both downloaded_kobj (in github.workspace) and workspace_path
+      # Setting working-directory to github.workspace and using explicit paths is safer.
+      working-directory: ${{ github.workspace }}
       run: |
-        echo "Package FastRPC firmware files"
-        cp -r ${{ inputs.workspace_path }}/firmware_dir/* ${{ inputs.workspace_path }}/artifacts/ramdisk_fastrpc/
+        echo "Unzipping kobj.zip"
+        unzip downloaded_kobj/kobj.zip -d extracted_kobj
+        echo "Contents of extracted_kobj:"
+        find extracted_kobj -type d
 
-        echo "Package DLKM into ramdisk"
-        cd ${{ inputs.workspace_path }}/kobj/tar-install
-        cp -r lib/* ${{ inputs.workspace_path }}/artifacts/ramdisk_fastrpc/usr/lib/
-        ls -la ${{ inputs.workspace_path }}/artifacts/ramdisk_fastrpc/usr/lib/
+        echo "Copying DLKM into ramdisk staging directory"
+        # Define the absolute path to the ramdisk staging directory for clarity
+        RAMDISK_STAGING_DIR="${{ inputs.workspace_path }}/artifacts/ramdisk_staging_dir"
 
-        cd ${{ inputs.workspace_path }}/artifacts/
-        cd ramdisk_fastrpc
-        find . | cpio -o -H newc > ../ramdisk_fastrpc.cpio
-        cd ..
-        gzip -9 ramdisk_fastrpc.cpio
-        mv ramdisk_fastrpc.cpio.gz ramdisk_fastrpc.gz
+        # Ensure the target directory for modules exists within the staging area
+        mkdir -p "${RAMDISK_STAGING_DIR}/lib/modules"
+        # Copy DLKM (kernel modules) into the ramdisk staging area
+        cp -a extracted_kobj/kobj/tar-install/lib/modules/. "${RAMDISK_STAGING_DIR}/lib/modules/"
+
+        echo "Repackaging ramdisk from staging directory"
+        # Navigate to the ramdisk staging directory to create the new cpio archive
+        # Output the new cpio to the artifacts directory
+        (cd "${RAMDISK_STAGING_DIR}" && find . | cpio -o -H newc > "${{ inputs.workspace_path }}/artifacts/new_ramdisk.cpio")
+
+        # Navigate back to the artifacts directory to gzip and rename the new ramdisk
+        cd "${{ inputs.workspace_path }}/artifacts"
+        gzip -9 new_ramdisk.cpio
+        mv new_ramdisk.cpio.gz ramdisk.gz
+        echo "Final ramdisk.gz created."
 
     - name: Unpack and inspect ramdisk
       shell: bash
+      working-directory: ${{ inputs.workspace_path }}/artifacts # Operate within the artifacts directory
       run: |
-        echo "Unpack and mount ramdisk"
-        cd ${{ inputs.workspace_path }}/artifacts
-        mkdir -p ramdisk_test
-        gunzip -c ramdisk_fastrpc.gz > ramdisk_test/ramdisk
+        echo "Unpack and inspect final ramdisk"
+        # Decompress the final ramdisk.gz safely
+        gunzip -c ramdisk.gz > ramdisk.cpio
 
-        echo "Unpacking ramdisk"
-        cd ramdisk_test
-        # Use safer syntax to avoid broken pipe
-        cpio -idmv < ramdisk || echo "cpio unpack failed"
+        # Check the format of the ramdisk (useful for debugging)
+        file ramdisk.cpio
 
-        # Inspect contents
-        ls -ltr usr/lib | grep rpc || true
-        ls -ltr usr/bin | grep rpc || true
+        # Create a dedicated directory to unpack into, to keep current directory clean
+        mkdir -p final_ramdisk_contents
+        echo "Unpacking ramdisk.cpio into final_ramdisk_contents/"
+        (cd final_ramdisk_contents && cpio -idmv < ../ramdisk.cpio)
+
+        # Inspect contents within the unpacked directory
+        echo "Inspecting final_ramdisk_contents/usr/lib:"
+        ls -ltr final_ramdisk_contents/usr/lib | grep rpc || true
+        echo "Inspecting final_ramdisk_contents/usr/bin:"
+        ls -ltr final_ramdisk_contents/usr/bin | grep rpc || true

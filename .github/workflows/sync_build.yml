@@ -25,8 +25,8 @@ on:
 jobs:
   build:
     runs-on:
-      group: GHA-fastrpc-Prd-SelfHosted-RG
-      labels: [ self-hosted, fastrpc-prd-u2404-x64-large-od-ephem ] 
+      group: GHA-FastRPC-Stg-SelfHosted-RG
+      labels: [ self-hosted, fastrpc-stg-u2404-x64-large-od-ephem ] 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,41 +56,78 @@ jobs:
 
       - name: Create file list for artifacts upload
         run: |
-          workspace=${{ steps.sync.outputs.workspace_path }}
+          set -eo pipefail # Exit immediately if a command exits with a non-zero status, and treat pipes as failing if any command in the pipe fails.
+          workspace="${{ steps.sync.outputs.workspace_path }}"
+          artifacts_dir="$workspace/artifacts"
+          extracted_kobj_dir="$workspace/extracted_kobj/kobj"
+          tar_install_dir="$extracted_kobj_dir/tar-install"
 
-          # Create the tarball in the root of the GitHub workspace
-          cd "$workspace/kobj/tar-install"
-          tar -cJf "${{ github.workspace }}/modules.tar.xz" lib/modules/
+          # Use a temporary file for the list to ensure atomicity before moving it to its final destination.
+          file_list_temp=$(mktemp "$artifacts_dir/file_list_XXXX.txt")
+
+          modules_tar_path="${{ github.workspace }}/modules.tar.xz" # Path where modules.tar.xz will be created.
+          if [ -d "$tar_install_dir/lib/modules" ]; then
+            # Navigate into tar_install_dir to create the tarball with relative paths inside.
+            # -cJf: create, use XZ compression, specify filename.
+            (cd "$tar_install_dir" && tar -cJf "$modules_tar_path" lib/modules/)
+            echo "Created $modules_tar_path"
+          else
+            echo "Warning: $tar_install_dir/lib/modules not found, skipping modules.tar.xz creation." >&2
+            # Clear the path if the tarball was not created, so it's not added to the list.
+            modules_tar_path="" 
+          fi
+
+          # Add files to the temporary list.
+          # Conditionally add modules.tar.xz if it was successfully created.
+          [ -n "$modules_tar_path" ] && echo "$modules_tar_path" >> "$file_list_temp"
           
-          # Populate the file_list.txt with paths to artifacts
-          cat <<EOF > "$workspace/artifacts/file_list.txt"
-          ${{ github.workspace }}/modules.tar.xz
-          $workspace/kobj/arch/arm64/boot/Image
-          $workspace/kobj/vmlinux
-          $workspace/artifacts/ramdisk_fastrpc.gz
-          $workspace/kobj/arch/arm64/boot/dts/qcom/${{ inputs.machine }}.dtb
-          EOF
+          # Add other required build artifacts.
+          echo "$extracted_kobj_dir/arch/arm64/boot/Image" >> "$file_list_temp"
+          echo "$extracted_kobj_dir/vmlinux" >> "$file_list_temp"
+          echo "$artifacts_dir/ramdisk.gz" >> "$file_list_temp"
+          echo "$extracted_kobj_dir/arch/arm64/boot/dts/qcom/${{ inputs.machine }}.dtb" >> "$file_list_temp"
 
-          echo "Generated artifact list:"
-          cat "$workspace/artifacts/file_list.txt"
+          # Move the temporary file to its final destination.
+          mv "$file_list_temp" "$artifacts_dir/file_list.txt"
+
+          echo "Artifacts directory contents after file list creation:"
+          ls -la "$artifacts_dir"
+          echo "Artifacts file_list.txt contents:"
+          cat "$artifacts_dir/file_list.txt"
+
 
       - name: Upload artifacts
         uses: qualcomm/fastrpc/.github/actions/aws_s3_helper@development
         with:
-          s3_bucket: qli-prd-fastrpc-gh-artifacts
+          s3_bucket: qli-stg-fastrpc-gh-artifacts
           # local_file points to the list of files to upload
           local_file: ${{ steps.sync.outputs.workspace_path }}/artifacts/file_list.txt
           mode: multi-upload
           machine: ${{ inputs.machine }}
 
       - name: Clean up
-        # This step is crucial for self-hosted runners to manage disk space.
+        shell: bash
         run: |
-          rm -rf "${{ steps.sync.outputs.workspace_path }}/artifacts" || true
-          rm -rf "${{ steps.sync.outputs.workspace_path }}/fastrpc_libs" || true
-          rm -rf "${{ steps.sync.outputs.workspace_path }}/gcc-linaro-7.5.0-2019.12-i686_aarch64-linux-gnu" || true
-          rm -rf "${{ steps.sync.outputs.workspace_path }}/kobj" || true
-          rm -f "${{ github.workspace }}/modules.tar.xz" || true # Clean up the tarball from the root workspace
+          set -eo pipefail # Ensure robustness for cleanup operations.
+          workspace="${{ steps.sync.outputs.workspace_path }}"
+
+          echo "Starting cleanup..."
+          # Remove specific directories/files.
+          # The `|| true` prevents the step from failing if a path doesn't exist,
+          # which is useful for idempotent cleanup.
+
+          # These directories are commonly extracted directly into the GITHUB_WORKSPACE.
+          rm -rf fastrpc_libs || true 
+          rm -rf gcc-linaro-7.5.0-2019.12-i686_aarch64-linux-gnu || true
+
+          # These directories are created within the dynamically determined 'workspace' path.
+          rm -rf "$workspace/artifacts" || true # Clean the artifacts directory itself.
+          rm -rf "$workspace/extracted_kobj/" || true
+
+          # This file was explicitly created at the GITHUB_WORKSPACE root.
+          rm -rf "${{ github.workspace }}/modules.tar.xz" || true 
+
+          echo "Cleanup complete."
 
       - name: Update summary
         # This step always runs to provide feedback on the build status.
