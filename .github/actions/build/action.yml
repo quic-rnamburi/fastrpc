@@ -45,8 +45,7 @@ runs:
         cp -a firmware_dir/. artifacts/ramdisk_staging_dir/
 
     - name: Download Kernel artifact
-      shell: bash
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: kobj-artifact
         path: downloaded_kobj # This path is relative to ${{ github.workspace }}

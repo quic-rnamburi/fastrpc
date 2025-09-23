@@ -81,5 +81,5 @@ jobs:
         with:
           name: kobj-artifact
           path: build_output/kobj.zip
-          retention-days: 7
+          retention-days: 30
         # Uploads the zipped kernel build artifacts
