@@ -25,7 +25,7 @@ jobs:
 
   # The loading job will load the build matrix from MACHINES.json
   loading:
-    uses: qualcomm/fastrpc/.github/workflows/loading.yml@development
+    uses: qualcomm-linux-stg/fastrpc/.github/workflows/loading.yml@Nightly-build
     secrets: inherit
 
   # Each job in build and test will run for every {machine, firmware} pair
@@ -36,7 +36,7 @@ jobs:
     strategy:
       matrix:
         include: ${{ fromJSON(needs.loading.outputs.build_matrix) }}
-    uses: qualcomm/fastrpc/.github/workflows/sync_build.yml@development
+    uses: qualcomm-linux-stg/fastrpc/.github/workflows/sync_build.yml@Nightly-build
     secrets: inherit
     with:
       docker_image: fastrpc-image:latest
@@ -47,7 +47,7 @@ jobs:
   # from the loading job. It will use the test.yml workflow to run tests.
   test:
     needs: [loading, build]
-    uses: qualcomm/fastrpc/.github/workflows/test.yml@development
+    uses: qualcomm-linux-stg/fastrpc/.github/workflows/test.yml@Nightly-build
     secrets: inherit
     with:
       docker_image: fastrpc-image:latest

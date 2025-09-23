@@ -24,4 +24,4 @@ jobs:
 
       - name: Load Parameters
         id: loading
-        uses: qualcomm/fastrpc/.github/actions/loading@development
+        uses: qualcomm-linux-stg/fastrpc/.github/actions/loading@Nightly-build

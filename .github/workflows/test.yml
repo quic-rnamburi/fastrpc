@@ -44,7 +44,7 @@ jobs:
           fetch-depth: 0
 
       - name: Build fastrpc docker image
-        uses: qualcomm/fastrpc/.github/actions/build_docker_image@development
+        uses: qualcomm-linux-stg/fastrpc/.github/actions/build_docker_image@Nightly-build
         with:
           image: ${{ inputs.docker_image }}
 
@@ -77,7 +77,7 @@ jobs:
             core.setOutput("LAVANAME", lavaname);
 
       - name: Create fastrpc - lava job definition
-        uses: qualcomm/fastrpc/.github/actions/lava_job_render@development
+        uses: qualcomm-linux-stg/fastrpc/.github/actions/lava_job_render@Nightly-build
         id: create_job_definition
         with:
           docker_image: ${{ inputs.docker_image }}
