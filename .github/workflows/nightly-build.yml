@@ -77,9 +77,9 @@ jobs:
         # Compresses build artifacts for upload
 
       - name: Upload zipped kobj as artifact
-        uses: actions/upload-artifact@v4
+        uses: qualcomm-linux-stg/fastrpc/.github/actions/aws_s3_helper@Nightly-build
         with:
-          name: kobj-artifact
-          path: build_output/kobj.zip
+          s3_bucket: qli-stg-fastrpc-gh-artifacts
+          local_file: ${{ github.workspace }}/build_output/kobj.zip
+          mode: single-upload
           retention-days: 30
-        # Uploads the zipped kernel build artifacts
