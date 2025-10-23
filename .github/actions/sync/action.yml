@@ -8,12 +8,12 @@ description: |
   `workspace_path` to the GitHub workspace directory.
 
 inputs:
-  machine:
-    description: Target machine name
+  linux_firmware:
+    description: Linux Firmware identifier
     type: string
     required: true
-  firmware:
-    description: Firmware identifier
+  target:
+    description: target identifier
     type: string
     required: true
 
@@ -46,7 +46,7 @@ runs:
         cd hexagon-dsp-binaries
         git fetch --all --tags --prune
 
-        TARGET="${{ inputs.firmware }}"
+        TARGET="${{ inputs.target }}"
         DSP_REF=""
         CONFIG="config.txt"
 
@@ -56,8 +56,9 @@ runs:
           exit 1
         fi
         while read -r _ subdir dsp version; do
-          echo "DSP binaries for $dsp in $subdir - $version" 
-          if [[ "${subdir,,}" == */"${TARGET,,}" ]]; then
+          echo "DSP binaries for $dsp in $subdir - $version"
+          # match anywhere in the path 
+          if [[ "${subdir,,}" == *"${TARGET,,}/"* ]]; then 
             echo "Found matching DSP binaries for target '$TARGET': $subdir - $version"
             echo "Copying DSP binaries for $dsp in $subdir/$version"
             mkdir -p "../firmware_dir/usr/lib/dsp/${dsp}"
@@ -74,9 +75,8 @@ runs:
       run: |
         cd ${{ github.workspace }}
         git clone https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git
-        TARGET_RAW="${{ inputs.firmware }}"
-        # Remove "-ride" suffix if present
-        TARGET="${TARGET_RAW%-ride}"
+        TARGET="${{ inputs.target }}"
+        LINUX_FIRMWARE="${{ inputs.linux_firmware }}"
 
         # Construct the source path for qcom firmware in the cloned linux-firmware repo
         # It's usually under <cloned_repo_root>/qcom/<target>
@@ -84,16 +84,16 @@ runs:
 
         # Check if the target qcom firmware directory exists in the cloned repo
         if [ ! -d "$LINUX_FIRMWARE_QCOM_PATH" ]; then
-          echo "ERROR: Directory '$LINUX_FIRMWARE_QCOM_PATH' not found in linux-firmware repo."
+          echo "ERROR: Directory '$LINUX_FIRMWARE_QCOM_PATH' not found in linux_firmware repo."
           exit -1
         else
           # Create the destination directory in firmware_dir
-          mkdir -p "${{ github.workspace }}/firmware_dir/usr/lib/firmware/qcom/${TARGET}"
+          mkdir -p "${{ github.workspace }}/firmware_dir/usr/lib/firmware/qcom/${LINUX_FIRMWARE}"
           
           # Copy the contents of the qcom target directory
           # Use trailing slashes to copy contents, not the directory itself
-          cp -rf "${LINUX_FIRMWARE_QCOM_PATH}/"* "${{ github.workspace }}/firmware_dir/usr/lib/firmware/qcom/${TARGET}/"
-          echo "Copied QCOM firmware from '${LINUX_FIRMWARE_QCOM_PATH}' to '${{ github.workspace }}/firmware_dir/usr/lib/firmware/qcom/${TARGET}/' successfully!"
+          cp -rf "${LINUX_FIRMWARE_QCOM_PATH}/"* "${{ github.workspace }}/firmware_dir/usr/lib/firmware/qcom/${LINUX_FIRMWARE}/"
+          echo "Copied QCOM firmware from '${LINUX_FIRMWARE_QCOM_PATH}' to '${{ github.workspace }}/firmware_dir/usr/lib/firmware/qcom/${LINUX_FIRMWARE}/' successfully!"
         fi
 
     - name: List all subdirectories and files in firmware_dir

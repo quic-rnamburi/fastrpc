@@ -17,8 +17,12 @@ on:
         description: Target machine name
         type: string
         required: true
-      firmware:
-        description: Firmware identifier
+      linux_firmware:
+        description: Linux Firmware identifier
+        type: string
+        required: true
+      target:
+        description: target identifier
         type: string
         required: true
 
@@ -44,8 +48,8 @@ jobs:
         id: sync
         uses: qualcomm-linux-stg/fastrpc/.github/actions/sync@Nightly-build
         with:
-          machine: ${{ inputs.machine }}
-          firmware: ${{ inputs.firmware }}
+          linux_firmware: ${{ inputs.linux_firmware }}
+          target: ${{ inputs.target }}
 
       - name: Build workspace
         id: build_workspace

@@ -1,6 +1,7 @@
-# FastRPC
+# FastRPC 
 
-## Introduction
+## Introduction 
+
 
 A Remote Procedure Call (RPC) allows a computer program calling a procedure to execute in another remote processor, while hiding the details of the remote interaction. FastRPC is the RPC mechanism used to enable remote function calls between the CPU and DSP.
 
