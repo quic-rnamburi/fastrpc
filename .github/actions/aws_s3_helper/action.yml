@@ -87,7 +87,7 @@ runs:
           download)
             #Download The required file from s3
             echo "Downloading files from S3 bucket..."
-            aws s3 cp s3://${{ inputs.s3_bucket }}/${{ inputs.download_file }} ${{ inputs.download_location }}
+            aws s3 cp s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}${{ inputs.download_file }} ${{ inputs.download_location }}
             ;;
           *)
             echo "Invalid mode. Use 'upload' or 'download'."

@@ -9,6 +9,10 @@ description: |
   Finally, it unpacks the generated ramdisk for inspection and verification.
 
 inputs:
+  machine:
+    description: Target machine name
+    type: string
+    required: true
   docker_image:
     description: Docker image
     required: true
@@ -47,8 +51,10 @@ runs:
     - name: Download Kernel artifact
       uses: actions/download-artifact@v4
       with:
-        name: kobj-artifact
-        path: downloaded_kobj # This path is relative to ${{ github.workspace }}
+        s3_bucket: qli-stg-fastrpc-gh-artifacts
+        download_file: kobj.zip 
+        machine: ${{ inputs.machine }}
+        download_location: ${{ github.workspace }}
 
     - name: Unzip DLKM, Copy to Ramdisk Staging, and Final Repack
       shell: bash
