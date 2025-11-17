@@ -5,7 +5,7 @@ description: |
   on pull request events (opened, synchronize, reopened) targeting 'main' or 'development',
   or manually via workflow_dispatch.
   Loading: Loads the build matrix from MACHINES.json.
-  Build: Syncs and Builds code for each machine/firmware pair using sync_build.yml.
+  Build: Syncs and Builds code for each target using sync_build.yml.
   Test: Runs LAVA tests using built artifacts via test.yml.
   All jobs use reusable workflows and inherit secrets from the caller.
 
@@ -28,7 +28,6 @@ jobs:
     uses: qualcomm-linux-stg/fastrpc/.github/workflows/loading.yml@Nightly-build
     secrets: inherit
 
-  # Each job in build and test will run for every {machine, firmware} pair
   # The build job will run on the machines specified in the build_matrix output
   # from the loading job. It will use the build.yml workflow to build the code.
   build:
@@ -40,11 +39,11 @@ jobs:
     secrets: inherit
     with:
       docker_image: fastrpc-image:latest
-      machine: ${{ matrix.machine }}
-      linux_firmware: ${{ matrix.linux_firmware }}
-      target: ${{ matrix.target }}
+      deviceTree: ${{ matrix.deviceTree }}
+      linuxFirmware: ${{ matrix.linuxFirmware }}
+      hexDSPBinary: ${{ matrix.hexDSPBinary }}
 
-  # The test job will run on the machines specified in the full_matrix output
+  # The test job will run on the machines specified in the build_matrix output
   # from the loading job. It will use the test.yml workflow to run tests.
   test:
     needs: [loading, build]

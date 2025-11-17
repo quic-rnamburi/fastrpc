@@ -21,8 +21,8 @@ inputs:
     description: Mode of operation (single-upload, multi-upload, download)
     required: true
     default: single-upload
-  machine:
-    description: Target machine name or identifier, used to organize uploads in S3.
+  deviceTree:
+    description: Target device Tree name or identifier, used to organize uploads in S3.
     type: string
     required: true
   retention_days:
@@ -43,7 +43,7 @@ runs:
       id: sync-data
       shell: bash
       env:
-        UPLOAD_LOCATION: ${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.workflow }}/${{ github.head_ref != '' && github.head_ref || github.run_id }}/${{ inputs.machine }}/
+        UPLOAD_LOCATION: ${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.workflow }}/${{ github.head_ref != '' && github.head_ref || github.run_id }}/${{ inputs.deviceTree }}/
       run: |
         echo "::group::$(printf '__________ %-100s' 'Process' | tr ' ' _)"
         case "${{ inputs.mode }}" in
@@ -51,8 +51,8 @@ runs:
             echo "Uploading files to S3 bucket..."
             first_line=true
             # Start the JSON object
-            mkdir -p "${{ github.workspace }}/${{ inputs.machine }}"
-            echo "{" > ${{ github.workspace }}/${{ inputs.machine }}/presigned_urls_${{ inputs.machine }}.json
+            mkdir -p "${{ github.workspace }}/${{ inputs.deviceTree }}"
+            echo "{" > ${{ github.workspace }}/${{ inputs.deviceTree }}/presigned_urls_${{ inputs.deviceTree }}.json
             while IFS= read -r file; do
               if [ -f "$file" ]; then
                 echo "Uploading $file..."
@@ -64,17 +64,17 @@ runs:
                 if [ "$first_line" = true ]; then
                   first_line=false
                 else
-                  echo "," >> ${{ github.workspace }}/${{ inputs.machine }}/presigned_urls_${{ inputs.machine }}.json
+                  echo "," >> ${{ github.workspace }}/${{ inputs.deviceTree }}/presigned_urls_${{ inputs.deviceTree }}.json
                 fi
                 # Append the pre-signed URL to the file
-                echo " \"${file}\": \"${presigned_url}\"" >> ${{ github.workspace }}/${{ inputs.machine }}/presigned_urls_${{ inputs.machine }}.json
+                echo " \"${file}\": \"${presigned_url}\"" >> ${{ github.workspace }}/${{ inputs.deviceTree }}/presigned_urls_${{ inputs.deviceTree }}.json
                 echo "Pre-signed URL for $file: $presigned_url"
               else
                 echo "Warning: $file does not exist or is not a regular file."
               fi
             done < "${{ inputs.local_file }}"
             # Close the JSON object
-            echo "}" >> ${{ github.workspace }}/${{ inputs.machine }}/presigned_urls_${{ inputs.machine }}.json
+            echo "}" >> ${{ github.workspace }}/${{ inputs.deviceTree }}/presigned_urls_${{ inputs.deviceTree }}.json
             ;;
           single-upload)
             echo "Uploading single file to S3 bucket..."
@@ -99,6 +99,6 @@ runs:
       if: ${{ inputs.mode == 'multi-upload' }}
       uses: actions/upload-artifact@v4
       with:
-        name: presigned_urls_${{ inputs.machine }}.json
-        path: ${{ github.workspace }}/${{ inputs.machine }}/presigned_urls_${{ inputs.machine }}.json
+        name: presigned_urls_${{ inputs.deviceTree }}.json
+        path: ${{ github.workspace }}/${{ inputs.deviceTree }}/presigned_urls_${{ inputs.deviceTree }}.json
         retention-days: 3

@@ -1,23 +1,20 @@
 {
   "qcs6490-rb3gen2": {
-    "machine": "qcs6490-rb3gen2",
-    "firmware": "rb3gen2",
-    "lavaname": "qcs6490",
-    "linux_firmware": "qcs6490",
-    "target": "qcm6490"
+    "deviceTree": "qcs6490-rb3gen2",
+    "linuxFirmware": "qcs6490",
+    "lavaDeviceName": "qcs6490",
+    "hexDSPBinary": "qcm6490"
   },
   "qcs9100-ride-r3": {
-    "machine": "qcs9100-ride-r3",
-    "firmware": "sa8775p-ride",
-    "lavaname": "qcs9100-ride",
-    "linux_firmware": "sa8775p",
-    "target": "sa8775p"
+    "deviceTree": "qcs9100-ride-r3",
+    "linuxFirmware": "sa8775p",
+    "lavaDeviceName": "qcs9100-ride",
+    "hexDSPBinary": "sa8775p"
   },
   "qcs8300-ride": {
-    "machine": "qcs8300-ride",
-    "firmware": "qcs8300-ride",
-    "lavaname": "qcs8300-ride",
-    "linux_firmware": "qcs8300",
-    "target": "qcs8300"
+    "deviceTree": "qcs8300-ride",
+    "linuxFirmware": "qcs8300",
+    "lavaDeviceName": "qcs8300-ride",
+    "hexDSPBinary": "qcs8300"
   }
 }

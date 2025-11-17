@@ -33,7 +33,7 @@ runs:
           }
           const filePath = p.join(
             process.env.GITHUB_WORKSPACE,
-            `presigned_urls_${process.env.MACHINE}.json`
+            `presigned_urls_${process.env.DEVICE_TREE}.json`
           );
 
           if (fs.existsSync(filePath)) {
@@ -49,7 +49,7 @@ runs:
           const imageUrl = findUrlByFilename('Image');
           const vmlinuxUrl = findUrlByFilename('vmlinux');
           const firmwareUrl = findUrlByFilename('ramdisk_fastrpc.gz');
-          const dtbFilename = `${process.env.MACHINE}.dtb`;
+          const dtbFilename = `${process.env.DEVICE_TREE}.dtb`;
           const dtbUrl = findUrlByFilename(dtbFilename);
           // Set outputs
           core.setOutput('modules_url', modulesTarUrl);
@@ -76,7 +76,7 @@ runs:
           -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
           -e dtb_url="${{ steps.process_urls.outputs.dtb_url }}" \
           ${{ inputs.docker_image }} \
-          jq '.artifacts["dtbs/qcom/${{ env.MACHINE }}.dtb"] = env.dtb_url' data/metadata.json > temp.json && mv temp.json data/metadata.json
+          jq '.artifacts["dtbs/qcom/${{ env.DEVICE_TREE }}.dtb"] = env.dtb_url' data/metadata.json > temp.json && mv temp.json data/metadata.json
 
     - name: Upload metadata.json
       id: upload_metadata
@@ -174,8 +174,8 @@ runs:
           --user "$(id -u):$(id -g)" \
           --workdir="$PWD" \
           -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e TARGET="${{ env.LAVA_NAME }}" \
-          -e TARGET_DTB="${{ env.MACHINE }}" \
+          -e TARGET="${{ env.LAVA_DEVICE_NAME }}" \
+          -e TARGET_DTB="${{ env.DEVICE_TREE }}" \
           ${{ inputs.docker_image }} \
           sh -c 'export BOOT_METHOD=fastboot && \
             export TARGET=${TARGET} && \

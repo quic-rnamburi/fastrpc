@@ -13,16 +13,16 @@ on:
         description: Docker image
         type: string
         required: true
-      machine:
-        description: Target machine name
+      deviceTree:
+        description: device Tree name
         type: string
         required: true
-      linux_firmware:
+      linuxFirmware:
         description: Linux Firmware identifier
         type: string
         required: true
-      target:
-        description: target identifier
+      hexDSPBinary:
+        description: Hexagon DSP binaries identifier
         type: string
         required: true
 
@@ -48,8 +48,8 @@ jobs:
         id: sync
         uses: qualcomm-linux-stg/fastrpc/.github/actions/sync@Nightly-build
         with:
-          linux_firmware: ${{ inputs.linux_firmware }}
-          target: ${{ inputs.target }}
+          linuxFirmware: ${{ inputs.linuxFirmware }}
+          hexDSPBinary: ${{ inputs.hexDSPBinary }}
 
       - name: Build workspace
         id: build_workspace
@@ -86,20 +86,17 @@ jobs:
           # Conditionally add modules.tar.xz if it was successfully created.
           [ -n "$modules_tar_path" ] && echo "$modules_tar_path" >> "$file_list_temp"
           
-          # Add other required build artifacts.
-          echo "$extracted_kobj_dir/arch/arm64/boot/Image" >> "$file_list_temp"
-          echo "$extracted_kobj_dir/vmlinux" >> "$file_list_temp"
-          echo "$artifacts_dir/ramdisk.gz" >> "$file_list_temp"
-          echo "$extracted_kobj_dir/arch/arm64/boot/dts/qcom/${{ inputs.machine }}.dtb" >> "$file_list_temp"
+          # Populate the file_list.txt with paths to artifacts
+          cat <<EOF > "$workspace/artifacts/file_list.txt"
+          ${{ github.workspace }}/modules.tar.xz
+          $workspace/kobj/arch/arm64/boot/Image
+          $workspace/kobj/vmlinux
+          $workspace/artifacts/ramdisk_fastrpc.gz
+          $workspace/kobj/arch/arm64/boot/dts/qcom/${{ inputs.deviceTree }}.dtb
+          EOF
 
-          # Move the temporary file to its final destination.
-          mv "$file_list_temp" "$artifacts_dir/file_list.txt"
-
-          echo "Artifacts directory contents after file list creation:"
-          ls -la "$artifacts_dir"
-          echo "Artifacts file_list.txt contents:"
-          cat "$artifacts_dir/file_list.txt"
-
+          echo "Generated artifact list:"
+          cat "$workspace/artifacts/file_list.txt"
 
       - name: Upload artifacts
         uses: qualcomm-linux-stg/fastrpc/.github/actions/aws_s3_helper@Nightly-build
@@ -108,7 +105,7 @@ jobs:
           # local_file points to the list of files to upload
           local_file: ${{ steps.sync.outputs.workspace_path }}/artifacts/file_list.txt
           mode: multi-upload
-          machine: ${{ inputs.machine }}
+          deviceTree: ${{ inputs.deviceTree }}
 
       - name: Clean up
         shell: bash

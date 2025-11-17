@@ -1,6 +1,6 @@
 name: test
 description: |
-  Run tests on LAVA for a specified machine using a Docker image.
+  Run tests on LAVA for a specified target using a Docker image.
   This reusable GitHub Actions workflow executes FastRPC tests on LAVA infrastructure.
   It leverages a Docker image for test execution and supports multi-target builds via a matrix strategy.
   The workflow automates job creation, submission, and result validation on LAVA,
@@ -46,7 +46,7 @@ jobs:
       - name: Download URLs list
         uses: actions/download-artifact@v4
         with:
-          name: presigned_urls_${{ matrix.build_matrix.machine }}.json
+          name: presigned_urls_${{ matrix.build_matrix.deviceTree }}.json
           merge-multiple: true
           path: ${{ github.workspace }}
 
@@ -59,8 +59,9 @@ jobs:
         with:
           docker_image: ${{ inputs.docker_image }}
         env:
-          MACHINE: ${{ matrix.build_matrix.machine }}
-          LAVA_NAME: ${{ matrix.build_matrix.lavaname }}
+          FIRMWARE: ${{ matrix.build_matrix.linuxFirmware }}
+          DEVICE_TREE: ${{ matrix.build_matrix.deviceTree }}
+          LAVA_DEVICE_NAME: ${{ matrix.build_matrix.lavaDeviceName }}
 
       - name: Submit lava job
         id: submit_job

@@ -8,12 +8,12 @@ description: |
   `workspace_path` to the GitHub workspace directory.
 
 inputs:
-  linux_firmware:
+  linuxFirmware:
     description: Linux Firmware identifier
     type: string
     required: true
-  target:
-    description: target identifier
+  hexDSPBinary:
+    description: Hexagon DSP binaries identifier
     type: string
     required: true
 
@@ -46,7 +46,7 @@ runs:
         cd hexagon-dsp-binaries
         git fetch --all --tags --prune
 
-        TARGET="${{ inputs.target }}"
+        TARGET="${{ inputs.hexDSPBinary }}"
         DSP_REF=""
         CONFIG="config.txt"
 
@@ -75,8 +75,8 @@ runs:
       run: |
         cd ${{ github.workspace }}
         git clone https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git
-        TARGET="${{ inputs.target }}"
-        LINUX_FIRMWARE="${{ inputs.linux_firmware }}"
+        TARGET="${{ inputs.hexDSPBinary }}"
+        LINUX_FIRMWARE="${{ inputs.linuxFirmware }}"
 
         # Construct the source path for qcom firmware in the cloned linux-firmware repo
         # It's usually under <cloned_repo_root>/qcom/<target>

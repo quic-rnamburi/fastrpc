@@ -2,7 +2,7 @@ name: Load Parameters
 description: |
   This composite action loads build parameters from a `MACHINES.json` file.
   It parses the JSON file to create two matrices:
-  - `build_matrix`: A complete matrix containing 'machine', 'firmware',  'lavaname' and 'target'
+  - `build_matrix`: A complete matrix containing 'deviceTree', 'linuxFirmware', 'lavaDeviceName' and 'hexDSPBinary'
   It expects the `MACHINES.json` file to be located at `ci/MACHINES.json` relative to the workspace root.
 
 outputs:
@@ -37,14 +37,13 @@ runs:
           const matrix = Object.values(fileData)
             .filter(item =>
               typeof item === 'object' && item !== null &&
-              'machine' in item && 'firmware' in item && 'lavaname' in item && 'target' in item
+              'deviceTree' in item && 'linuxFirmware' in item && 'lavaDeviceName' in item && 'hexDSPBinary' in item
             )
-            .map(({ machine, firmware, lavaname, linux_firmware, target }) => ({
-              machine,
-              firmware,
-              lavaname,
-              linux_firmware,
-              target
+            .map(({ deviceTree, linuxFirmware, lavaDeviceName, hexDSPBinary }) => ({
+              deviceTree,
+              linuxFirmware,
+              lavaDeviceName,
+              hexDSPBinary
             }));
 
           core.setOutput('build_matrix', JSON.stringify(matrix));
