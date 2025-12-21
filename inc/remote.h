@@ -264,7 +264,7 @@ enum remote_rpc_latency_flags {
  **/
 struct remote_rpc_control_latency {
 /** Enable latency optimization techniques to meet requested latency. Use remote_rpc_latency_flags */
-    uint32_t enable;
+
 
 /**
  * Latency in microseconds.
