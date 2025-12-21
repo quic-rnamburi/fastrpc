@@ -131,10 +131,7 @@ typedef struct dspqueue_create_req {
 	/* [in]: Fastrpc multi-domain context */
 	uint64_t ctx;
 
-	/* [in]: Queue creation flags (unused for now) */
-	uint64_t flags;
 
-	/*
 	 * [in]: Total request queue memory size in bytes;
 	 * use 0 for system default
 	 */
