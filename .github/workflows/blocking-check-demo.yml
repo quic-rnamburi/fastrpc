@@ -1,0 +1,24 @@
+name: Blocking Check Demo
+
+on:
+  pull_request:
+    branches: [ main ]   # or your target branch
+  workflow_dispatch:
+
+jobs:
+  first-job:
+    name: First Job (passes)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Do something trivial
+        run: echo "This job passes"
+
+  second-job:
+    name: Second Job (intentionally fails)
+    needs: first-job
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail on purpose
+        run: |
+          echo "About to fail to simulate a policy violation"
+          exit 1
