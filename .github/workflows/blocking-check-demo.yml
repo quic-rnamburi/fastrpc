@@ -2,7 +2,7 @@ name: Blocking Check Demo
 
 on:
   pull_request:
-    branches: [ main ]   # or your target branch
+    branches: [ blockingcheck ]   # or your target branch
   workflow_dispatch:
 
 jobs:
